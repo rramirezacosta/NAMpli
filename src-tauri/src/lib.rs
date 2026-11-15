@@ -67,6 +67,10 @@ pub fn run() {
             commands::get_audio_status,
             commands::get_tuner,
             commands::set_buffer_size,
+            commands::list_presets,
+            commands::save_preset,
+            commands::load_preset,
+            commands::delete_preset,
             commands::toggle_power,
         ])
         .run(tauri::generate_context!())

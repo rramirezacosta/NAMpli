@@ -114,6 +114,22 @@ export async function setBufferSize(size: number): Promise<void> {
   return invoke('set_buffer_size', { size });
 }
 
+export async function listPresets(): Promise<string[]> {
+  return invoke('list_presets');
+}
+
+export async function savePreset(name: string, content: string): Promise<void> {
+  return invoke('save_preset', { name, content });
+}
+
+export async function loadPreset(name: string): Promise<string> {
+  return invoke('load_preset', { name });
+}
+
+export async function deletePreset(name: string): Promise<void> {
+  return invoke('delete_preset', { name });
+}
+
 export async function listNamModels(): Promise<string[]> {
   return invoke('list_nam_models');
 }

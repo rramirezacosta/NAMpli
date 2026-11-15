@@ -2,7 +2,7 @@ use crate::audio_engine::{AudioEngine, AudioStatus};
 use cpal::traits::{DeviceTrait, HostTrait};
 use serde::Serialize;
 use std::sync::Mutex as StdMutex;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
 pub fn list_audio_hosts() -> Vec<String> {
@@ -347,6 +347,72 @@ pub fn set_buffer_size(
 ) -> Result<(), String> {
     let mut engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     engine.set_buffer_size(size)
+}
+
+fn presets_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Could not resolve app data dir: {}", e))?
+        .join("presets");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create presets dir: {}", e))?;
+    Ok(dir)
+}
+
+fn sanitize_preset_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == ' ')
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+#[tauri::command]
+pub fn list_presets(app: AppHandle) -> Result<Vec<String>, String> {
+    let dir = presets_dir(&app)?;
+    let mut names = Vec::new();
+    for entry in std::fs::read_dir(&dir).map_err(|e| format!("Could not read presets: {}", e))? {
+        let entry = entry.map_err(|e| format!("Bad entry: {}", e))?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("json") {
+            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                names.push(stem.to_string());
+            }
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+#[tauri::command]
+pub fn save_preset(app: AppHandle, name: String, content: String) -> Result<(), String> {
+    let safe = sanitize_preset_name(&name);
+    if safe.is_empty() {
+        return Err("Preset name is empty".into());
+    }
+    let dir = presets_dir(&app)?;
+    let path = dir.join(format!("{}.json", safe));
+    std::fs::write(&path, content).map_err(|e| format!("Could not write preset: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn load_preset(app: AppHandle, name: String) -> Result<String, String> {
+    let safe = sanitize_preset_name(&name);
+    let dir = presets_dir(&app)?;
+    let path = dir.join(format!("{}.json", safe));
+    std::fs::read_to_string(&path).map_err(|e| format!("Could not read preset: {}", e))
+}
+
+#[tauri::command]
+pub fn delete_preset(app: AppHandle, name: String) -> Result<(), String> {
+    let safe = sanitize_preset_name(&name);
+    let dir = presets_dir(&app)?;
+    let path = dir.join(format!("{}.json", safe));
+    if path.exists() {
+        std::fs::remove_file(&path).map_err(|e| format!("Could not delete preset: {}", e))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

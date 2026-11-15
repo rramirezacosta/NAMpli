@@ -13,14 +13,27 @@ import {
   loadIr as tauriLoadIr,
   clearIr as tauriClearIr,
   setIrMix as tauriSetIrMix,
+  listPresets as tauriListPresets,
+  savePreset as tauriSavePreset,
+  loadPreset as tauriLoadPreset,
+  deletePreset as tauriDeletePreset,
 } from '../tauri';
 import type { AudioDeviceInfo } from '../tauri';
 import { notifyError } from '../notifications';
 import './SettingsPanel.css';
 
+import type { AmpSettings } from '../types/amp';
+
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
+  settings: AmpSettings;
+  onSetInputVolume: (v: number) => void;
+  onSetGate: (v: number) => void;
+  onSetBass: (v: number) => void;
+  onSetMiddle: (v: number) => void;
+  onSetTreble: (v: number) => void;
+  onSetOutputVolume: (v: number) => void;
 }
 
 const BUFFER_SIZE_OPTIONS = [
@@ -38,7 +51,18 @@ const BUFFER_SIZE_OPTIONS = [
   { value: 8192, label: '8192 samples (~171ms)' },
 ];
 
-export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelProps) {
+export default function SettingsPanel({
+  open: isOpen,
+  onClose,
+  settings,
+  onSetInputVolume,
+  onSetGate,
+  onSetBass,
+  onSetMiddle,
+  onSetTreble,
+  onSetOutputVolume,
+}: SettingsPanelProps) {
+  const [selectedNamModel, setSelectedNamModel] = useState<number>(0);
   const [hosts, setHosts] = useState<string[]>([]);
   const [selectedHost, setSelectedHost] = useState<string>('');
   const [inputDevices, setInputDevices] = useState<AudioDeviceInfo[]>([]);
@@ -48,7 +72,9 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
   const [bufferSize, setBufferSize] = useState<number>(256);
 
   const [namModels, setNamModels] = useState<string[]>([]);
-  const [selectedNamModel, setSelectedNamModel] = useState<number>(0);
+  const [presets, setPresets] = useState<string[]>([]);
+  const [selectedPreset, setSelectedPreset] = useState<string>('');
+  const [presetName, setPresetName] = useState<string>('');
 
   const [irName, setIrName] = useState<string | null>(null);
   const [irMix, setIrMix] = useState<number>(100);
@@ -74,6 +100,11 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
         const models = await tauriListNamModels();
         if (cancelled) return;
         setNamModels(models);
+
+        const presetList = await tauriListPresets();
+        if (cancelled) return;
+        setPresets(presetList);
+        if (presetList.length && !selectedPreset) setSelectedPreset(presetList[0]);
 
         try {
           const status = await tauriGetAudioStatus();
@@ -147,6 +178,71 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
 
   const handleSelectOutput = (deviceId: string) => {
     setSelectedOutput(deviceId);
+  };
+
+  const handleSavePreset = async () => {
+    const name = presetName.trim();
+    if (!name) {
+      notifyError('Enter a preset name first.');
+      return;
+    }
+    const content = JSON.stringify({
+      modelIndex: selectedNamModel,
+      inputVolume: settings.inputVolume,
+      gate: settings.gate,
+      bass: settings.bass,
+      middle: settings.middle,
+      treble: settings.treble,
+      outputVolume: settings.outputVolume,
+      bufferSize,
+    });
+    try {
+      await tauriSavePreset(name, content);
+      const list = await tauriListPresets();
+      setPresets(list);
+      setSelectedPreset(name);
+    } catch (err) {
+      console.error('Failed to save preset:', err);
+      notifyError(`Could not save preset: ${err}`);
+    }
+  };
+
+  const handleLoadPreset = async () => {
+    if (!selectedPreset) return;
+    try {
+      const raw = await tauriLoadPreset(selectedPreset);
+      const preset = JSON.parse(raw);
+      if (typeof preset.inputVolume === 'number') onSetInputVolume(preset.inputVolume);
+      if (typeof preset.gate === 'number') onSetGate(preset.gate);
+      if (typeof preset.bass === 'number') onSetBass(preset.bass);
+      if (typeof preset.middle === 'number') onSetMiddle(preset.middle);
+      if (typeof preset.treble === 'number') onSetTreble(preset.treble);
+      if (typeof preset.outputVolume === 'number') onSetOutputVolume(preset.outputVolume);
+      if (typeof preset.bufferSize === 'number') {
+        setBufferSize(preset.bufferSize);
+        tauriSetBufferSize(preset.bufferSize).catch(() => {});
+      }
+      if (typeof preset.modelIndex === 'number') {
+        setSelectedNamModel(preset.modelIndex);
+        tauriSetNamModel(preset.modelIndex).catch(() => {});
+      }
+    } catch (err) {
+      console.error('Failed to load preset:', err);
+      notifyError(`Could not load preset: ${err}`);
+    }
+  };
+
+  const handleDeletePreset = async () => {
+    if (!selectedPreset) return;
+    try {
+      await tauriDeletePreset(selectedPreset);
+      const list = await tauriListPresets();
+      setPresets(list);
+      setSelectedPreset(list.length ? list[0] : '');
+    } catch (err) {
+      console.error('Failed to delete preset:', err);
+      notifyError(`Could not delete preset: ${err}`);
+    }
   };
 
   const handleSetNamModel = async (index: number) => {
@@ -269,6 +365,57 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
           <button className="settings-close" onClick={onClose} aria-label="Close settings">
             &times;
           </button>
+        </div>
+
+        <div className="settings-section">
+          <h3>Presets</h3>
+
+          <div className="setting-row">
+            <label className="setting-label">Preset</label>
+            <select
+              className="setting-select"
+              value={selectedPreset}
+              onChange={(e) => setSelectedPreset(e.target.value)}
+            >
+              {presets.length === 0 ? (
+                <option value="">No presets saved</option>
+              ) : (
+                presets.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))
+              )}
+            </select>
+            <span className="setting-value">{selectedPreset || '—'}</span>
+          </div>
+
+          <div className="setting-row">
+            <label className="setting-label">Name</label>
+            <input
+              className="setting-select"
+              type="text"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              placeholder="New preset name"
+            />
+          </div>
+
+          <div className="setting-row setting-inline">
+            <button className="setting-button" onClick={handleSavePreset}>
+              Save
+            </button>
+            <button className="setting-button" onClick={handleLoadPreset} disabled={!selectedPreset}>
+              Load
+            </button>
+            <button
+              className="setting-button setting-button-secondary"
+              onClick={handleDeletePreset}
+              disabled={!selectedPreset}
+            >
+              Delete
+            </button>
+          </div>
         </div>
 
         <div className="settings-section">

@@ -32,7 +32,17 @@ function App() {
       <TunerIcon onClick={() => setShowTuner(true)} />
       <AudioStatusBar status={audioStatus} />
       <Toast />
-      <SettingsPanel open={showSettings} onClose={() => setShowSettings(false)} />
+      <SettingsPanel
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        settings={settings}
+        onSetInputVolume={setInputVolume}
+        onSetGate={setGate}
+        onSetBass={setBass}
+        onSetMiddle={setMiddle}
+        onSetTreble={setTreble}
+        onSetOutputVolume={setOutputVolume}
+      />
       {showTuner && (
         <div className="tuner-popup-overlay" onClick={() => setShowTuner(false)}>
           <div className="tuner-popup" onClick={(e) => e.stopPropagation()}>
