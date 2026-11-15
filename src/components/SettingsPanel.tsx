@@ -3,14 +3,16 @@ import { open } from '@tauri-apps/plugin-dialog';
 import {
   listAudioDevices as tauriListDevices,
   listAudioHosts as tauriListAudioHosts,
+  listNamModels as tauriListNamModels,
   setAudioDevices as tauriSetAudioDevices,
   setAudioHost as tauriSetAudioHost,
   setBufferSize as tauriSetBufferSize,
+  setNamModel as tauriSetNamModel,
+  getAudioStatus as tauriGetAudioStatus,
   setNoiseGate as tauriSetNoiseGate,
   loadIr as tauriLoadIr,
   clearIr as tauriClearIr,
   setIrMix as tauriSetIrMix,
-  getAudioStatus as tauriGetAudioStatus,
 } from '../tauri';
 import type { AudioDeviceInfo } from '../tauri';
 import { notifyError } from '../notifications';
@@ -45,6 +47,9 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
   const [selectedOutput, setSelectedOutput] = useState<string>('');
   const [bufferSize, setBufferSize] = useState<number>(256);
 
+  const [namModels, setNamModels] = useState<string[]>([]);
+  const [selectedNamModel, setSelectedNamModel] = useState<number>(0);
+
   const [irName, setIrName] = useState<string | null>(null);
   const [irMix, setIrMix] = useState<number>(100);
 
@@ -65,6 +70,21 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
 
         const host = selectedHost || availableHosts[0] || '';
         if (!selectedHost && host) setSelectedHost(host);
+
+        const models = await tauriListNamModels();
+        if (cancelled) return;
+        setNamModels(models);
+
+        try {
+          const status = await tauriGetAudioStatus();
+          if (!cancelled && status.namModel) {
+            const idx = models.indexOf(status.namModel);
+            if (idx >= 0) setSelectedNamModel(idx);
+          }
+          if (!cancelled && status.irName) setIrName(status.irName);
+        } catch {
+          // ignore
+        }
 
         const devices = await tauriListDevices(host || undefined);
         if (cancelled) return;
@@ -92,7 +112,12 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
     const loadStatus = async () => {
       try {
         const status = await tauriGetAudioStatus();
-        if (!cancelled && status.irName) setIrName(status.irName);
+        if (cancelled) return;
+        if (status.irName) setIrName(status.irName);
+        if (status.namModel && namModels.length) {
+          const idx = namModels.indexOf(status.namModel);
+          if (idx >= 0) setSelectedNamModel(idx);
+        }
       } catch {
         // Status is best-effort; the panel still works without it.
       }
@@ -122,6 +147,16 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
 
   const handleSelectOutput = (deviceId: string) => {
     setSelectedOutput(deviceId);
+  };
+
+  const handleSetNamModel = async (index: number) => {
+    setSelectedNamModel(index);
+    try {
+      await tauriSetNamModel(index);
+    } catch (err) {
+      console.error('Failed to set NAM model:', err);
+      notifyError(`Could not change NAM model: ${err}`);
+    }
   };
 
   const handleSelectHost = async (host: string) => {
@@ -234,6 +269,32 @@ export default function SettingsPanel({ open: isOpen, onClose }: SettingsPanelPr
           <button className="settings-close" onClick={onClose} aria-label="Close settings">
             &times;
           </button>
+        </div>
+
+        <div className="settings-section">
+          <h3>Model</h3>
+
+          <div className="setting-row">
+            <label className="setting-label">NAM Model</label>
+            <select
+              className="setting-select"
+              value={selectedNamModel}
+              onChange={(e) => handleSetNamModel(Number(e.target.value))}
+            >
+              {namModels.length === 0 ? (
+                <option value={0}>No models found</option>
+              ) : (
+                namModels.map((name, index) => (
+                  <option key={name} value={index}>
+                    {name.replace('.nam', '')}
+                  </option>
+                ))
+              )}
+            </select>
+            <span className="setting-value">
+              {namModels[selectedNamModel] || ''}
+            </span>
+          </div>
         </div>
 
         <div className="settings-section">

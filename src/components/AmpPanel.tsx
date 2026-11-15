@@ -2,59 +2,55 @@ import Knob from './Knob';
 import './AmpPanel.css';
 
 interface AmpPanelProps {
-  gainLevel: number;
-  preampVolume: number;
-  presence: number;
+  inputVolume: number;
+  gate: number;
   bass: number;
   middle: number;
   treble: number;
-  masterVolume: number;
+  outputVolume: number;
   powerOn: boolean;
-  onSetGainLevel: (v: number) => void;
-  onSetPreampVolume: (v: number) => void;
-  onSetPresence: (v: number) => void;
+  onSetInputVolume: (v: number) => void;
+  onSetGate: (v: number) => void;
   onSetBass: (v: number) => void;
   onSetMiddle: (v: number) => void;
   onSetTreble: (v: number) => void;
-  onSetMasterVolume: (v: number) => void;
+  onSetOutputVolume: (v: number) => void;
 }
 
 export default function AmpPanel({
-  gainLevel,
-  preampVolume,
-  presence,
+  inputVolume,
+  gate,
   bass,
   middle,
   treble,
-  masterVolume,
+  outputVolume,
   powerOn,
-  onSetGainLevel,
-  onSetPreampVolume,
-  onSetPresence,
+  onSetInputVolume,
+  onSetGate,
   onSetBass,
   onSetMiddle,
   onSetTreble,
-  onSetMasterVolume,
+  onSetOutputVolume,
 }: AmpPanelProps) {
   return (
     <div className={`amp-panel ${powerOn ? 'power-on' : 'power-off'}`}>
       <div className="panel-header">
         <h1 className="panel-title">JCM800</h1>
-        <p className="panel-subtitle">NAM Player</p>
+        <p className="panel-subtitle">NAMpli</p>
       </div>
 
       <div className="knob-row">
         <Knob
-          label="Gain"
-          value={gainLevel}
-          onChange={onSetGainLevel}
-          description="Selects one of the five captured gain stages (G2..G10)"
+          label="Input"
+          value={inputVolume}
+          onChange={onSetInputVolume}
+          description="Input trim: pushes the guitar harder (or softer) into the model. 5 = unity."
         />
         <Knob
-          label="Preamp"
-          value={preampVolume}
-          onChange={onSetPreampVolume}
-          description="Input trim: pushes the guitar harder (or softer) into the captured amp. 5 = unity."
+          label="Gate"
+          value={gate}
+          onChange={onSetGate}
+          description="Noise gate threshold. 0 = off."
         />
         <Knob
           label="Bass"
@@ -75,15 +71,9 @@ export default function AmpPanel({
           description="Adjusts high frequencies"
         />
         <Knob
-          label="Presence"
-          value={presence}
-          onChange={onSetPresence}
-          description="Power-amp high-frequency bite around 5 kHz"
-        />
-        <Knob
-          label="Master"
-          value={masterVolume}
-          onChange={onSetMasterVolume}
+          label="Output"
+          value={outputVolume}
+          onChange={onSetOutputVolume}
           description="Controls overall output volume"
         />
       </div>

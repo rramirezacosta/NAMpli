@@ -46,6 +46,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_audio_hosts,
             commands::list_audio_devices,
+            commands::list_nam_models,
+            commands::set_nam_model,
             commands::start_audio,
             commands::set_audio_devices,
             commands::set_audio_host,

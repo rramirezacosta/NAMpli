@@ -294,6 +294,24 @@ pub fn get_tuner(
 }
 
 #[tauri::command]
+pub fn list_nam_models(
+    engine: State<'_, StdMutex<AudioEngine>>,
+) -> Vec<String> {
+    let engine = engine.lock().unwrap();
+    engine.nam_model_names()
+}
+
+#[tauri::command]
+pub fn set_nam_model(
+    engine: State<'_, StdMutex<AudioEngine>>,
+    index: usize,
+) -> Result<(), String> {
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    engine.set_nam_model(index);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_buffer_size(
     engine: State<'_, StdMutex<AudioEngine>>,
     size: usize,

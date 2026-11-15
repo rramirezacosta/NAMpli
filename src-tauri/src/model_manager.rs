@@ -262,6 +262,33 @@ impl ModelManager {
         self.current_key = key;
     }
 
+    /// Sorted list of loaded model filenames, for UI selection.
+    pub fn model_names(&self) -> Vec<String> {
+        let mut entries: Vec<&LoadedModel> = self.models.values().collect();
+        entries.sort_by(|a, b| a.filename.cmp(&b.filename));
+        entries.into_iter().map(|m| m.filename.clone()).collect()
+    }
+
+    /// Sorted list of loaded model keys, matching `model_names()`.
+    fn sorted_keys(&self) -> Vec<ModelKey> {
+        let mut entries: Vec<(&ModelKey, &LoadedModel)> = self.models.iter().collect();
+        entries.sort_by(|a, b| a.1.filename.cmp(&b.1.filename));
+        entries.into_iter().map(|(k, _)| *k).collect()
+    }
+
+    /// Switch to a model by its index in `model_names()`.
+    pub fn switch_model_index(&mut self, index: usize, crossfade_samples: usize) {
+        let keys = self.sorted_keys();
+        if let Some(key) = keys.get(index) {
+            self.switch_model(key.sensitivity, key.gain_level, crossfade_samples);
+        }
+    }
+
+    /// Filename of the currently active model.
+    pub fn current_model_name(&self) -> Option<String> {
+        self.models.get(&self.current_key).map(|m| m.filename.clone())
+    }
+
     /// Switch to a different model based on sensitivity and gain level.
     /// `crossfade_samples` controls the equal-power blend (0 disables it).
     pub fn switch_model(

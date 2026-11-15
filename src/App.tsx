@@ -3,7 +3,6 @@ import { useAmpSettings } from './hooks/useAmpSettings';
 import { useAudioStatus } from './hooks/useAudioStatus';
 import AmpPanel from './components/AmpPanel';
 import PowerSwitch from './components/PowerSwitch';
-import InputJacks from './components/InputJacks';
 import SettingsIcon from './components/SettingsIcon';
 import TunerIcon from './components/TunerIcon';
 import SettingsPanel from './components/SettingsPanel';
@@ -17,15 +16,13 @@ function App() {
   const [showTuner, setShowTuner] = useState(false);
   const {
     settings,
-    setGainLevel,
-    setPreampVolume,
-    setPresence,
+    setInputVolume,
+    setGate,
     setBass,
     setMiddle,
     setTreble,
-    setMasterVolume,
+    setOutputVolume,
     togglePower,
-    setInputSensitivity,
   } = useAmpSettings();
   const audioStatus = useAudioStatus();
 
@@ -48,28 +45,21 @@ function App() {
       )}
       <div className="app-content">
         <AmpPanel
-          gainLevel={settings.gainLevel}
-          preampVolume={settings.preampVolume}
-          presence={settings.presence}
+          inputVolume={settings.inputVolume}
+          gate={settings.gate}
           bass={settings.bass}
           middle={settings.middle}
           treble={settings.treble}
-          masterVolume={settings.masterVolume}
+          outputVolume={settings.outputVolume}
           powerOn={settings.powerOn}
-          onSetGainLevel={setGainLevel}
-          onSetPreampVolume={setPreampVolume}
-          onSetPresence={setPresence}
+          onSetInputVolume={setInputVolume}
+          onSetGate={setGate}
           onSetBass={setBass}
           onSetMiddle={setMiddle}
           onSetTreble={setTreble}
-          onSetMasterVolume={setMasterVolume}
+          onSetOutputVolume={setOutputVolume}
         />
         <div className="controls-row">
-          <InputJacks
-            inputSensitivity={settings.inputSensitivity}
-            onChange={setInputSensitivity}
-            disabled={!settings.powerOn}
-          />
           <PowerSwitch powerOn={settings.powerOn} onToggle={togglePower} />
         </div>
       </div>

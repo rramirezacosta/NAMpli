@@ -6,32 +6,40 @@ import {
   setBass as tauriSetBass,
   setMiddle as tauriSetMiddle,
   setTreble as tauriSetTreble,
-  setPresence as tauriSetPresence,
   setPreamp as tauriSetPreamp,
   setMasterVolume as tauriSetMasterVolume,
-  setGainLevel as tauriSetGainLevel,
-  setSensitivity as tauriSetSensitivity,
+  setNoiseGate as tauriSetNoiseGate,
   togglePower as tauriTogglePower,
 } from '../tauri';
 
 export function useAmpSettings() {
   const [settings, setSettings] = useState<AmpSettings>(DEFAULT_SETTINGS);
 
-  const setPreampVolume = useCallback(async (value: number) => {
-    setSettings((prev) => ({ ...prev, preampVolume: value }));
+  const setInputVolume = useCallback(async (value: number) => {
+    setSettings((prev) => ({ ...prev, inputVolume: value }));
     try {
-      // Input trim: 0-10 maps to -12..+12 dB around the 5 (unity) midpoint.
       await tauriSetPreamp(value / 10);
     } catch (err) {
-      console.error('Failed to set preamp volume:', err);
+      console.error('Failed to set input volume:', err);
       notifyError('Could not change the input trim.');
+    }
+  }, []);
+
+  const setGate = useCallback(async (value: number) => {
+    setSettings((prev) => ({ ...prev, gate: value }));
+    try {
+      const enabled = value > 0;
+      const thresholdDb = -80 + value * 6;
+      await tauriSetNoiseGate(enabled, thresholdDb, 120);
+    } catch (err) {
+      console.error('Failed to set noise gate:', err);
+      notifyError('Could not change the noise gate.');
     }
   }, []);
 
   const setBass = useCallback(async (value: number) => {
     setSettings((prev) => ({ ...prev, bass: value }));
     try {
-      // Knobs are 0-10; the audio engine expects normalized 0-1 values.
       await tauriSetBass(value / 10);
     } catch (err) {
       console.error('Failed to set bass:', err);
@@ -59,36 +67,13 @@ export function useAmpSettings() {
     }
   }, []);
 
-  const setPresence = useCallback(async (value: number) => {
-    setSettings((prev) => ({ ...prev, presence: value }));
+  const setOutputVolume = useCallback(async (value: number) => {
+    setSettings((prev) => ({ ...prev, outputVolume: value }));
     try {
-      await tauriSetPresence(value / 10);
-    } catch (err) {
-      console.error('Failed to set presence:', err);
-      notifyError('Could not change the presence control.');
-    }
-  }, []);
-
-  const setMasterVolume = useCallback(async (value: number) => {
-    setSettings((prev) => ({ ...prev, masterVolume: value }));
-    try {
-      // Knobs are 0-10; the audio engine expects normalized 0-1 values.
       await tauriSetMasterVolume(value / 10);
     } catch (err) {
-      console.error('Failed to set master volume:', err);
-      notifyError('Could not change the master volume.');
-    }
-  }, []);
-
-  const setGainLevel = useCallback(async (level: number) => {
-    setSettings((prev) => ({ ...prev, gainLevel: level }));
-    try {
-      // The 0-10 knob maps onto the 5 captured model gain levels (G2..G10).
-      const modelLevel = Math.min(5, Math.max(1, Math.round(level / 2)));
-      await tauriSetGainLevel(modelLevel);
-    } catch (err) {
-      console.error('Failed to set gain level:', err);
-      notifyError('Could not change the gain level.');
+      console.error('Failed to set output volume:', err);
+      notifyError('Could not change the output volume.');
     }
   }, []);
 
@@ -102,26 +87,14 @@ export function useAmpSettings() {
     }
   }, []);
 
-  const setInputSensitivity = useCallback(async (sensitivity: 'high' | 'low') => {
-    setSettings((prev) => ({ ...prev, inputSensitivity: sensitivity }));
-    try {
-      await tauriSetSensitivity(sensitivity);
-    } catch (err) {
-      console.error('Failed to set sensitivity:', err);
-      notifyError('Could not change the input sensitivity.');
-    }
-  }, []);
-
   return {
     settings,
-    setPreampVolume,
+    setInputVolume,
+    setGate,
     setBass,
     setMiddle,
     setTreble,
-    setPresence,
-    setMasterVolume,
-    setGainLevel,
+    setOutputVolume,
     togglePower,
-    setInputSensitivity,
   };
 }

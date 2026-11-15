@@ -73,6 +73,7 @@ pub struct AudioStatus {
     pub xruns: u64,
     pub last_error: Option<String>,
     pub ir_name: Option<String>,
+    pub nam_model: Option<String>,
 }
 
 /// Shared state between UI thread and audio thread
@@ -815,6 +816,7 @@ impl AudioEngine {
                 .lock()
                 .as_ref()
                 .map(|cab| cab.file_name().to_string()),
+            nam_model: self.nam_model_name(),
         }
     }
 
@@ -838,6 +840,25 @@ impl AudioEngine {
             self.start(None, None)?;
         }
         Ok(())
+    }
+
+    /// Select one of the preloaded NAM models by index.
+    pub fn set_nam_model(&self, index: usize) {
+        let sample_rate = self.state.lock().sample_rate;
+        let crossfade = (MODEL_CROSSFADE_MS * sample_rate as f32 / 1000.0) as usize;
+        let mut mm = self.model_manager.lock();
+        mm.switch_model_index(index, crossfade);
+        log::info!("NAM model set to index {}", index);
+    }
+
+    /// Filename of the currently active NAM model.
+    pub fn nam_model_name(&self) -> Option<String> {
+        self.model_manager.lock().current_model_name()
+    }
+
+    /// Sorted list of all loaded NAM model filenames.
+    pub fn nam_model_names(&self) -> Vec<String> {
+        self.model_manager.lock().model_names()
     }
 
     pub fn is_powered(&self) -> bool {

@@ -86,6 +86,7 @@ export interface AudioStatus {
   xruns: number;
   lastError: string | null;
   irName: string | null;
+  namModel: string | null;
 }
 
 export async function getAudioStatus(): Promise<AudioStatus> {
@@ -111,6 +112,14 @@ export async function togglePower(): Promise<boolean> {
 
 export async function setBufferSize(size: number): Promise<void> {
   return invoke('set_buffer_size', { size });
+}
+
+export async function listNamModels(): Promise<string[]> {
+  return invoke('list_nam_models');
+}
+
+export async function setNamModel(index: number): Promise<void> {
+  return invoke('set_nam_model', { index });
 }
 
 export async function listAudioHosts(): Promise<string[]> {
