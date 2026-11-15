@@ -40,42 +40,46 @@ export default function AmpPanel({
       </div>
 
       <div className="knob-row">
-        <Knob
-          label="Input"
-          value={inputVolume}
-          onChange={onSetInputVolume}
-          description="Input trim: pushes the guitar harder (or softer) into the model. 5 = unity."
-        />
-        <Knob
-          label="Gate"
-          value={gate}
-          onChange={onSetGate}
-          description="Noise gate threshold. 0 = off."
-        />
-        <Knob
-          label="Bass"
-          value={bass}
-          onChange={onSetBass}
-          description="Adjusts low frequencies"
-        />
-        <Knob
-          label="Middle"
-          value={middle}
-          onChange={onSetMiddle}
-          description="Adjusts midrange frequencies"
-        />
-        <Knob
-          label="Treble"
-          value={treble}
-          onChange={onSetTreble}
-          description="Adjusts high frequencies"
-        />
-        <Knob
-          label="Output"
-          value={outputVolume}
-          onChange={onSetOutputVolume}
-          description="Controls overall output volume"
-        />
+        <div className="knob-group">
+          <Knob
+            label="Input"
+            value={inputVolume}
+            onChange={onSetInputVolume}
+            description="Input trim: pushes the guitar harder (or softer) into the model. 5 = unity."
+          />
+          <Knob
+            label="Gate"
+            value={gate}
+            onChange={onSetGate}
+            description="Noise gate threshold. 0 = off."
+          />
+          <Knob
+            label="Bass"
+            value={bass}
+            onChange={onSetBass}
+            description="Adjusts low frequencies"
+          />
+        </div>
+        <div className="knob-group">
+          <Knob
+            label="Middle"
+            value={middle}
+            onChange={onSetMiddle}
+            description="Adjusts midrange frequencies"
+          />
+          <Knob
+            label="Treble"
+            value={treble}
+            onChange={onSetTreble}
+            description="Adjusts high frequencies"
+          />
+          <Knob
+            label="Output"
+            value={outputVolume}
+            onChange={onSetOutputVolume}
+            description="Controls overall output volume"
+          />
+        </div>
       </div>
     </div>
   );
