@@ -59,8 +59,10 @@ fn collect_devices(
     default_id: Option<&str>,
     host_name: &str,
 ) -> Vec<serde_json::Value> {
-    let mut result = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    // Collect candidates, then collapse entries that share a label (e.g. the
+    // many ALSA `front:`/`hw:`/`plughw:`/`surround*:` variants of one card)
+    // into a single entry, keeping the most direct (lowest-latency) one.
+    let mut candidates: Vec<(String, String, bool, i32)> = Vec::new();
 
     if let Some(devices) = devices {
         for device in devices {
@@ -69,16 +71,11 @@ fn collect_devices(
 
             // ALSA exposes virtual endpoints like "null" and "sysdefault". "null"
             // is never useful in a guitar app, and "sysdefault" can resolve to a
-            // broken dmix plugin when PipeWire owns the hardware. The working
-            // route is usually "alsa:default" (PipeWire) or an explicit "front:"/
-            // "hw:" device.
+            // broken dmix plugin when PipeWire owns the hardware.
             if id == "alsa:null"
                 || id == "alsa:sysdefault"
                 || id.starts_with("alsa:sysdefault:")
             {
-                continue;
-            }
-            if !seen.insert(id.clone()) {
                 continue;
             }
 
@@ -88,14 +85,30 @@ fn collect_devices(
                 .map(|d| d.name().to_string())
                 .unwrap_or_else(|| id.clone());
 
-            // Mark endpoints that bypass the OS mixer so users can pick the
-            // lowest-latency route. JACK endpoints are all direct by nature.
             let is_jack = host_name.eq_ignore_ascii_case("jack");
             let is_hardware = is_jack
                 || id.contains(":hw:")
                 || id.contains(":plughw:")
                 || id.contains(":front:")
                 || id.contains(":surround");
+
+            // Prefer the most direct route when collapsing duplicates.
+            let score: i32 = if is_jack {
+                100
+            } else if id.contains(":hw:") {
+                90
+            } else if id.contains(":plughw:") {
+                80
+            } else if id.contains(":front:") {
+                70
+            } else if id.contains(":hdmi:") || id.contains(":iec958:") {
+                60
+            } else if id.contains(":default") || id.contains(":pipewire") {
+                10
+            } else {
+                50
+            };
+
             let label = if is_jack {
                 format!("{} (JACK)", base_label)
             } else if is_hardware {
@@ -104,15 +117,31 @@ fn collect_devices(
                 base_label
             };
 
-            result.push(serde_json::json!({
-                "id": id,
-                "label": label,
-                "isDefault": default_id == Some(id.as_str()),
-            }));
+            candidates.push((id.clone(), label, default_id == Some(id.as_str()), score));
         }
     }
 
-    result
+    // Collapse by label, keeping the highest-scoring candidate.
+    let mut best: std::collections::BTreeMap<String, (String, bool, i32)> =
+        std::collections::BTreeMap::new();
+    for (id, label, is_default, score) in candidates {
+        match best.get(&label) {
+            Some((_, _, prev_score)) if *prev_score >= score => {}
+            _ => {
+                best.insert(label.clone(), (id, is_default, score));
+            }
+        }
+    }
+
+    best.into_iter()
+        .map(|(label, (id, is_default, _))| {
+            serde_json::json!({
+                "id": id,
+                "label": label,
+                "isDefault": is_default,
+            })
+        })
+        .collect()
 }
 
 #[tauri::command]
