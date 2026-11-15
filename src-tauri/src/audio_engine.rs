@@ -929,8 +929,7 @@ fn pick_output_config(device: &cpal::Device, desired_rate: u32) -> Result<Suppor
         .supported_output_configs()
         .map_err(|e| format!("Failed to query output configs: {}", e))?;
     pick_config(ranges, desired_rate, true)
-        .or_else(|| device.default_output_config().ok())
-        .ok_or_else(|| "No usable output config found".to_string())
+        .ok_or_else(|| "No usable 32-bit float output config found for this device".to_string())
 }
 
 fn pick_input_config(device: &cpal::Device, desired_rate: u32) -> Result<SupportedStreamConfig, String> {
@@ -938,8 +937,7 @@ fn pick_input_config(device: &cpal::Device, desired_rate: u32) -> Result<Support
         .supported_input_configs()
         .map_err(|e| format!("Failed to query input configs: {}", e))?;
     pick_config(ranges, desired_rate, false)
-        .or_else(|| device.default_input_config().ok())
-        .ok_or_else(|| "No usable input config found".to_string())
+        .ok_or_else(|| "No usable 32-bit float input config found for this device".to_string())
 }
 
 /// Pick an F32 config at the desired sample rate. Prefer mono input (guitar) and

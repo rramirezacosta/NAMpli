@@ -95,14 +95,14 @@ fn collect_devices(
             // Prefer the most direct route when collapsing duplicates.
             let score: i32 = if is_jack {
                 100
-            } else if id.contains(":hw:") {
-                90
             } else if id.contains(":plughw:") {
-                80
+                95
+            } else if id.contains(":hw:") {
+                85
             } else if id.contains(":front:") {
-                70
+                75
             } else if id.contains(":hdmi:") || id.contains(":iec958:") {
-                60
+                65
             } else if id.contains(":default") || id.contains(":pipewire") {
                 10
             } else {
