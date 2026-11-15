@@ -1,0 +1,84 @@
+.input-jacks {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.input-jacks-label {
+  font-size: 0.85rem;
+  color: #d4af37;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-weight: 700;
+  text-shadow: 0 0 6px rgba(212, 175, 55, 0.3);
+}
+
+.jack-buttons {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.jack-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 3px solid #555;
+  background: linear-gradient(145deg, #3a3a3a 0%, #2a2a2a 50%, #1a1a1a 100%);
+  color: #888;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: 
+    0 3px 8px rgba(0, 0, 0, 0.6),
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.3);
+  position: relative;
+}
+
+/* Metallic ring effect */
+.jack-btn::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  right: 3px;
+  bottom: 3px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.jack-btn:hover:not(.disabled) {
+  border-color: #d4af37;
+  color: #d4af37;
+  box-shadow: 
+    0 3px 12px rgba(212, 175, 55, 0.3),
+    inset 0 1px 2px rgba(255, 255, 255, 0.1),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.jack-btn.active {
+  border-color: #d4af37;
+  color: #f0d060;
+  background: linear-gradient(145deg, #4a4020 0%, #3a3018 50%, #2a2010 100%);
+  box-shadow: 
+    0 0 16px rgba(212, 175, 55, 0.5),
+    0 3px 8px rgba(0, 0, 0, 0.6),
+    inset 0 1px 2px rgba(255, 255, 255, 0.15),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.3);
+  text-shadow: 0 0 6px rgba(212, 175, 55, 0.6);
+}
+
+.jack-btn.disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+  filter: grayscale(0.5);
+}

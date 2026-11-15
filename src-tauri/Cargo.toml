@@ -1,0 +1,50 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "NAMpli"
+authors = ["you"]
+license = ""
+repository = ""
+edition = "2024"
+rust-version = "1.90"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+# The NAM model is ~5x slower than realtime when built with opt-level 0, which
+# makes every audio callback miss its deadline ("buffer underrun or overrun").
+# Dependencies (nam-rs, cpal, ringbuf, ...) are always optimized, including in
+# dev builds, while the app crate itself keeps fast incremental compiles.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+
+[features]
+default = []
+# Enable JACK host support (requires libjack development headers).
+jack = ["cpal/jack"]
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.12.5", features = [] }
+anyhow = "1.0"
+tauri-plugin-log = "2"
+tauri-plugin-dialog = "2"
+cpal = "0.18"
+nam-rs = "0.4"
+ringbuf = "0.4"
+parking_lot = "0.12"
+hound = "3.5"

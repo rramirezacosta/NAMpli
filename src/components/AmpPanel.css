@@ -1,0 +1,100 @@
+.amp-panel {
+  padding: 2rem 2rem 2.5rem;
+  max-width: 900px;
+  width: 100%;
+  transition: box-shadow 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(180deg, #1a1a1a 0%, #111 50%, #0d0d0d 100%);
+  border: 1px solid rgba(212, 175, 55, 0.15);
+  border-radius: 4px;
+  box-shadow:
+    0 2px 16px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+/* Textured panel background resembling a real amp faceplate */
+.amp-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.008) 2px,
+      rgba(255, 255, 255, 0.008) 4px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255, 255, 255, 0.005) 2px,
+      rgba(255, 255, 255, 0.005) 4px
+    );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.amp-panel.power-on {
+  box-shadow: 0 4px 32px rgba(212, 175, 55, 0.15);
+}
+
+.amp-panel.power-on::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    ellipse at 50% 0%,
+    rgba(212, 175, 55, 0.05) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+.panel-header {
+  text-align: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid rgba(212, 175, 55, 0.4);
+  position: relative;
+  z-index: 1;
+}
+
+.panel-title {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: #f0d060;
+  letter-spacing: 0.2em;
+  margin: 0;
+  text-shadow:
+    0 0 12px rgba(212, 175, 55, 0.5),
+    0 2px 4px rgba(0, 0, 0, 0.8);
+  text-transform: uppercase;
+}
+
+.panel-subtitle {
+  font-size: 0.8rem;
+  color: #aaa;
+  letter-spacing: 0.4em;
+  margin: 0.4rem 0 0;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.knob-row {
+  display: flex;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  position: relative;
+  z-index: 1;
+}

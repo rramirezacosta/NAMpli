@@ -1,0 +1,69 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  height: 100vh;
+  background: #0a0a0a;
+}
+
+.app-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 1000px;
+  padding: 2rem 1rem 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.controls-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 700px;
+}
+
+.tuner-popup-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 96px 12px 0 0;
+  z-index: 300;
+}
+
+.tuner-popup {
+  background: rgba(16, 16, 16, 0.96);
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
+.tuner-popup .tuner {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  top: auto;
+  left: auto;
+  width: 220px;
+}
+
+.tuner-popup-close {
+  display: block;
+  margin: 8px auto 0;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  color: #d4af37;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.75rem;
+}

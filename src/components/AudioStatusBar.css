@@ -1,0 +1,46 @@
+.audio-status {
+  position: fixed;
+  left: 12px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 24px);
+  font-size: 0.66rem;
+  color: #666;
+  z-index: 150;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.audio-status-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #444;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.audio-status.live .audio-status-dot {
+  background: #6fdd8b;
+  box-shadow: 0 0 6px rgba(111, 221, 139, 0.6);
+}
+
+.audio-status-text {
+  white-space: nowrap;
+}
+
+.audio-status-ir {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8a7a44;
+  padding-left: 8px;
+  border-left: 1px solid rgba(212, 175, 55, 0.2);
+}
+
+.audio-status-ir:empty {
+  display: none;
+}

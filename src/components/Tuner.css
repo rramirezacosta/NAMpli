@@ -1,0 +1,123 @@
+.tuner {
+  position: fixed;
+  top: 10px;
+  left: 12px;
+  width: 170px;
+  padding: 8px 10px 10px;
+  background: rgba(16, 16, 16, 0.92);
+  border: 1px solid rgba(212, 175, 55, 0.18);
+  border-radius: 6px;
+  z-index: 150;
+  opacity: 0.55;
+  transition: opacity 0.2s ease, border-color 0.2s ease;
+  pointer-events: none;
+}
+
+.tuner.active {
+  opacity: 1;
+}
+
+.tuner.in-tune {
+  border-color: rgba(90, 210, 120, 0.6);
+  box-shadow: 0 0 12px rgba(90, 210, 120, 0.15);
+}
+
+.tuner-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.tuner-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8a7a44;
+}
+
+.tuner-hz {
+  font-size: 0.6rem;
+  color: #777;
+  font-variant-numeric: tabular-nums;
+}
+
+.tuner-reading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.tuner-note {
+  font-size: 1.6rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #d4af37;
+  font-variant-numeric: tabular-nums;
+}
+
+.tuner.in-tune .tuner-note {
+  color: #6fdd8b;
+  text-shadow: 0 0 10px rgba(111, 221, 139, 0.4);
+}
+
+.tuner-cents {
+  font-size: 0.7rem;
+  color: #999;
+  font-variant-numeric: tabular-nums;
+}
+
+.tuner.in-tune .tuner-cents {
+  color: #6fdd8b;
+}
+
+.tuner-meter {
+  position: relative;
+  height: 6px;
+  margin-top: 6px;
+  background: #0b0b0b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.tuner-meter-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(212, 175, 55, 0.5);
+  transform: translateX(-50%);
+}
+
+.tuner-meter-tick {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tuner-meter-tick-left {
+  left: 25%;
+}
+
+.tuner-meter-tick-right {
+  left: 75%;
+}
+
+.tuner-meter-needle {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 3px;
+  border-radius: 2px;
+  background: #d4af37;
+  transform: translateX(-50%);
+  transition: left 0.08s linear;
+}
+
+.tuner.in-tune .tuner-meter-needle {
+  background: #6fdd8b;
+}
