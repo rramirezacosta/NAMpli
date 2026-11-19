@@ -72,6 +72,10 @@ pub fn run() {
             commands::load_preset,
             commands::delete_preset,
             commands::toggle_power,
+            commands::save_nam_file_unnamed,
+            commands::save_ir_file,
+            commands::load_nam_by_path,
+            commands::log_to_terminal,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

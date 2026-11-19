@@ -846,8 +846,7 @@ impl AudioEngine {
     pub fn set_nam_model(&self, index: usize) {
         let sample_rate = self.state.lock().sample_rate;
         let crossfade = (MODEL_CROSSFADE_MS * sample_rate as f32 / 1000.0) as usize;
-        let mut mm = self.model_manager.lock();
-        mm.switch_model_index(index, crossfade);
+        self.model_manager.lock().switch_model_index(index, crossfade);
         log::info!("NAM model set to index {}", index);
     }
 
@@ -859,6 +858,26 @@ impl AudioEngine {
     /// Sorted list of all loaded NAM model filenames.
     pub fn nam_model_names(&self) -> Vec<String> {
         self.model_manager.lock().model_names()
+    }
+
+    /// Load a NAM model from an arbitrary file path.
+    pub fn load_nam_by_path(&self, path: &str) -> Result<String, String> {
+        use std::path::Path;
+        let p = Path::new(path);
+        let filename = p.file_name()
+            .and_then(|f| f.to_str())
+            .unwrap_or(path)
+            .to_string();
+        let bytes = std::fs::read(path)
+            .map_err(|e| format!("Could not read NAM file '{}': {}", path, e))?;
+        let sample_rate = self.state.lock().sample_rate;
+        let mut mm = self.model_manager.lock();
+        mm.load_model_from_bytes(&filename, bytes)
+            .map_err(|e| format!("Failed to load NAM '{}': {}", filename, e))?;
+        let crossfade = (MODEL_CROSSFADE_MS * sample_rate as f32 / 1000.0) as usize;
+        mm.switch_model_by_key(&filename, crossfade);
+        log::info!("Loaded NAM by path: {} -> {}", path, filename);
+        Ok(filename)
     }
 
     pub fn is_powered(&self) -> bool {

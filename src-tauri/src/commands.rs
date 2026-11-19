@@ -427,3 +427,93 @@ pub fn toggle_power(engine: State<'_, StdMutex<AudioEngine>>) -> Result<bool, St
         engine.start(None, None).map(|_| true)
     }
 }
+
+/// Save a NAM file dropped from the UI into the app_data/nams/ directory
+/// (unnamed mode — not associated with any preset slot).
+#[tauri::command]
+pub fn save_nam_file_unnamed(
+    app: AppHandle,
+    filename: String,
+    data: String,
+) -> Result<String, String> {
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use base64::Engine;
+
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Could not resolve app data dir: {}", e))?
+        .join("nams");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create nams dir: {}", e))?;
+
+    // Sanitize the file name
+    let safe = filename
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == ' ')
+        .collect::<String>()
+        .trim()
+        .to_string();
+    let name = if safe.is_empty() { "imported" } else { &safe };
+    let stem = name.trim().replace(".nam", "");
+    let final_name = format!("{}.nam", stem);
+
+    let path = dir.join(&final_name);
+    let bytes = BASE64
+        .decode(data)
+        .map_err(|e| format!("Invalid base64 data: {}", e))?;
+    std::fs::write(&path, bytes).map_err(|e| format!("Could not write NAM file: {}", e))?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Save an IR (WAV) file dropped from the UI into the app_data/irs/ directory.
+#[tauri::command]
+pub fn save_ir_file(
+    app: AppHandle,
+    filename: String,
+    data: String,
+) -> Result<String, String> {
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use base64::Engine;
+
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Could not resolve app data dir: {}", e))?
+        .join("irs");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create irs dir: {}", e))?;
+
+    let safe = filename
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == ' ')
+        .collect::<String>()
+        .trim()
+        .to_string();
+    let name = if safe.is_empty() { "imported" } else { &safe };
+    let stem = name.trim().replace(".wav", "");
+    let final_name = format!("{}.wav", stem);
+
+    let path = dir.join(&final_name);
+    let bytes = BASE64
+        .decode(data)
+        .map_err(|e| format!("Invalid base64 data: {}", e))?;
+    std::fs::write(&path, bytes).map_err(|e| format!("Could not write IR file: {}", e))?;
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Load a NAM model from an arbitrary file path into the audio engine.
+#[tauri::command]
+pub fn load_nam_by_path(
+    engine: State<'_, StdMutex<AudioEngine>>,
+    path: String,
+) -> Result<String, String> {
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    engine.load_nam_by_path(&path)
+}
+
+/// Log a message to the OS terminal (for frontend debugging).
+#[tauri::command]
+pub fn log_to_terminal(msg: String) {
+    eprintln!("[JS] {}", msg);
+}
