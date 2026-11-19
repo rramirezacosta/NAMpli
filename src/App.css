@@ -67,3 +67,36 @@
   cursor: pointer;
   font-size: 0.75rem;
 }
+
+/* Drop zone overlay for unnamed mode */
+.drop-zone-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+  pointer-events: none;
+}
+
+.drop-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 2rem 3rem;
+  border: 2px dashed rgba(212, 175, 55, 0.6);
+  border-radius: 12px;
+  background: rgba(20, 20, 20, 0.9);
+}
+
+.drop-zone-icon {
+  font-size: 3rem;
+}
+
+.drop-zone-content p {
+  color: #d4af37;
+  font-size: 1.2rem;
+  margin: 0;
+}

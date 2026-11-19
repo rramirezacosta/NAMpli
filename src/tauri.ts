@@ -149,3 +149,19 @@ export async function listAudioDevices(host?: string): Promise<AudioDevices> {
 export async function setAudioHost(host?: string): Promise<void> {
   return invoke('set_audio_host', { host });
 }
+
+export async function saveNamFileUnnamed(filename: string, data: string): Promise<string> {
+  return invoke('save_nam_file_unnamed', { filename, data });
+}
+
+export async function saveIrFile(filename: string, data: string): Promise<string> {
+  return invoke('save_ir_file', { filename, data });
+}
+
+export async function loadNamByPath(path: string): Promise<string> {
+  return invoke('load_nam_by_path', { path });
+}
+
+export async function logToTerminal(msg: string): Promise<void> {
+  return invoke('log_to_terminal', { msg });
+}
