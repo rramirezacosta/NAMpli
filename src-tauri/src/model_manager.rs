@@ -42,6 +42,16 @@ pub struct ModelKey {
     pub gain_level: GainLevel,
 }
 
+impl ModelKey {
+    fn filename_str(&self) -> String {
+        let sens = match self.sensitivity {
+            Sensitivity::High => "Hi",
+            Sensitivity::Low => "Lo",
+        };
+        format!("JCM800 {} P6 B8 M4 T7 G{}", sens, self.gain_level.g_number())
+    }
+}
+
 /// Loaded NAM model with metadata
 pub struct LoadedModel {
     pub model: Model,
@@ -56,21 +66,37 @@ pub struct LoadedModel {
 /// a hard swap produces an audible transient. During a fade the DSP thread runs
 /// both models and mixes them with sin/cos weights, which keeps the perceived
 /// loudness constant across the transition.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct FadeState {
-    pub from: ModelKey,
+    pub from: ModelId,
     pub remaining: usize,
     pub total: usize,
 }
 
+/// Key for model lookup — either a built-in (sensitivity+gain) or an arbitrary filename.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ModelId {
+    BuiltIn(ModelKey),
+    Custom(String),
+}
+
+impl ModelId {
+    fn filename_str(&self) -> &str {
+        match self {
+            ModelId::Custom(s) => s,
+            ModelId::BuiltIn(_) => "",
+        }
+    }
+}
+
 /// Manages loading, mapping, and switching NAM models
 pub struct ModelManager {
-    models: HashMap<ModelKey, LoadedModel>,
-    current_key: ModelKey,
+    models: HashMap<ModelId, LoadedModel>,
+    current_id: ModelId,
     fade: Option<FadeState>,
     /// Model requested while a fade is still running. Applied when the current
     /// fade finishes so rapid gain-knob moves never stack crossfades.
-    pending: Option<(ModelKey, usize)>,
+    pending: Option<(ModelId, usize)>,
 }
 
 impl ModelManager {
@@ -123,10 +149,10 @@ impl ModelManager {
                 loudness
             );
 
-            let key = ModelKey {
+            let key = ModelId::BuiltIn(ModelKey {
                 sensitivity: *sensitivity,
                 gain_level: *gain_level,
-            };
+            });
 
             models.insert(key, LoadedModel {
                 model,
@@ -137,14 +163,14 @@ impl ModelManager {
         }
 
         // Default to High sensitivity, gain level 1
-        let current_key = ModelKey {
+        let current_id = ModelId::BuiltIn(ModelKey {
             sensitivity: Sensitivity::High,
             gain_level: GainLevel::new(1),
-        };
+        });
 
         Ok(ModelManager {
             models,
-            current_key,
+            current_id,
             fade: None,
             pending: None,
         })
@@ -152,7 +178,7 @@ impl ModelManager {
 
     /// Get the expected sample rate of the current model
     pub fn current_expected_sample_rate(&self) -> u32 {
-        self.models.get(&self.current_key).map(|m| m.expected_sample_rate).unwrap_or(48000)
+        self.models.get(&self.current_id).map(|m| m.expected_sample_rate).unwrap_or(48000)
     }
 
     /// Process a buffer through the active model, crossfading from the previous
@@ -162,21 +188,21 @@ impl ModelManager {
     pub fn process(&mut self, buffer: &mut [f32], scratch: &mut [f32]) -> f32 {
         let n = buffer.len().min(scratch.len());
 
-        let Some(fade) = self.fade else {
+        let Some(fade) = self.fade.clone() else {
             let loaded = self
                 .models
-                .get_mut(&self.current_key)
+                .get_mut(&self.current_id)
                 .expect("Current model not found");
             loaded.model.process_buffer(&mut buffer[..n]);
             return loaded.loudness;
         };
 
         // A fade from the same key (or a missing model) is meaningless.
-        if fade.from == self.current_key || !self.models.contains_key(&fade.from) {
+        if fade.from == self.current_id || !self.models.contains_key(&fade.from) {
             self.fade = None;
             let loaded = self
                 .models
-                .get_mut(&self.current_key)
+                .get_mut(&self.current_id)
                 .expect("Current model not found");
             loaded.model.process_buffer(&mut buffer[..n]);
             return loaded.loudness;
@@ -184,12 +210,12 @@ impl ModelManager {
 
         let [Some(from), Some(to)] = self
             .models
-            .get_disjoint_mut([&fade.from, &self.current_key])
+            .get_disjoint_mut([&fade.from, &self.current_id])
         else {
             self.fade = None;
             let loaded = self
                 .models
-                .get_mut(&self.current_key)
+                .get_mut(&self.current_id)
                 .expect("Current model not found");
             loaded.model.process_buffer(&mut buffer[..n]);
             return loaded.loudness;
@@ -219,15 +245,15 @@ impl ModelManager {
             self.fade = None;
             // Start the next queued switch, if the user moved the knob again
             // while this fade was still running.
-            if let Some((next_key, crossfade)) = self.pending.take() {
-                if next_key != self.current_key {
-                    self.begin_switch(next_key, crossfade);
+            if let Some((next_id, crossfade)) = self.pending.take() {
+                if next_id != self.current_id {
+                    self.begin_switch(next_id, crossfade);
                 }
             }
         } else {
             self.fade = Some(FadeState {
                 remaining: new_remaining,
-                ..fade
+                ..fade.clone()
             });
         }
 
@@ -242,16 +268,16 @@ impl ModelManager {
     }
 
     /// Reset the target model and start the equal-power fade into it.
-    fn begin_switch(&mut self, key: ModelKey, crossfade_samples: usize) {
+    fn begin_switch(&mut self, id: ModelId, crossfade_samples: usize) {
         // `reset()` zeroes every internal buffer, so the new model starts from a
         // clean slate. The crossfade hides the resulting transient.
-        if let Some(loaded) = self.models.get_mut(&key) {
+        if let Some(loaded) = self.models.get_mut(&id) {
             loaded.model.reset();
         }
 
         if crossfade_samples > 0 {
             self.fade = Some(FadeState {
-                from: self.current_key,
+                from: self.current_id.clone(),
                 remaining: crossfade_samples,
                 total: crossfade_samples,
             });
@@ -259,7 +285,7 @@ impl ModelManager {
             self.fade = None;
         }
 
-        self.current_key = key;
+        self.current_id = id;
     }
 
     /// Sorted list of loaded model filenames, for UI selection.
@@ -269,24 +295,74 @@ impl ModelManager {
         entries.into_iter().map(|m| m.filename.clone()).collect()
     }
 
-    /// Sorted list of loaded model keys, matching `model_names()`.
-    fn sorted_keys(&self) -> Vec<ModelKey> {
-        let mut entries: Vec<(&ModelKey, &LoadedModel)> = self.models.iter().collect();
+    /// Sorted list of loaded model ids, matching `model_names()`.
+    fn sorted_ids(&self) -> Vec<ModelId> {
+        let mut entries: Vec<(ModelId, &LoadedModel)> = self.models.iter().map(|(k, v)| (k.clone(), v)).collect();
         entries.sort_by(|a, b| a.1.filename.cmp(&b.1.filename));
-        entries.into_iter().map(|(k, _)| *k).collect()
+        entries.into_iter().map(|(k, _)| k).collect()
     }
 
     /// Switch to a model by its index in `model_names()`.
     pub fn switch_model_index(&mut self, index: usize, crossfade_samples: usize) {
-        let keys = self.sorted_keys();
-        if let Some(key) = keys.get(index) {
-            self.switch_model(key.sensitivity, key.gain_level, crossfade_samples);
+        let ids = self.sorted_ids();
+        if let Some(id) = ids.get(index).cloned() {
+            self.switch_to_id(id, crossfade_samples);
         }
     }
 
     /// Filename of the currently active model.
     pub fn current_model_name(&self) -> Option<String> {
-        self.models.get(&self.current_key).map(|m| m.filename.clone())
+        self.models.get(&self.current_id).map(|m| m.filename.clone())
+    }
+
+    /// Switch to a model by ModelId.
+    fn switch_to_id(&mut self, id: ModelId, crossfade_samples: usize) {
+        if self.current_id == id {
+            self.pending = None;
+            return;
+        }
+
+        if !self.models.contains_key(&id) {
+            log::warn!("Model not found for id: {:?}", id);
+            return;
+        }
+
+        let filename = &self.models.get(&id).unwrap().filename;
+        log::info!("Switching to model: {}", filename);
+
+        if self.fade.is_some() {
+            self.pending = Some((id, crossfade_samples));
+            return;
+        }
+
+        self.begin_switch(id, crossfade_samples);
+    }
+
+    /// Switch to a model by filename (used for custom/unnamed NAM files).
+    pub fn switch_model_by_key(&mut self, filename: &str, crossfade_samples: usize) {
+        let id = ModelId::Custom(filename.to_string());
+        self.switch_to_id(id, crossfade_samples);
+    }
+
+    /// Load a NAM model from raw bytes and register it under the given filename.
+    pub fn load_model_from_bytes(&mut self, filename: &str, bytes: Vec<u8>) -> Result<(), String> {
+        let json = String::from_utf8(bytes)
+            .map_err(|e| format!("NAM file is not valid UTF-8: {}", e))?;
+        let nam = NamModel::from_json_str(&json)
+            .map_err(|e| format!("Failed to parse NAM: {}", e))?;
+        let model = Model::from_nam(&nam)
+            .map_err(|e| format!("Failed to create model: {}", e))?;
+        let expected_sample_rate = nam.expected_sample_rate() as u32;
+        let loudness = nam.loudness().unwrap_or(-20.0);
+        log::info!("Loaded custom NAM {} (sample_rate={}, loudness={:.1}dB)", filename, expected_sample_rate, loudness);
+        let id = ModelId::Custom(filename.to_string());
+        self.models.insert(id, LoadedModel {
+            model,
+            filename: filename.to_string(),
+            expected_sample_rate,
+            loudness,
+        });
+        Ok(())
     }
 
     /// Switch to a different model based on sensitivity and gain level.
@@ -297,37 +373,10 @@ impl ModelManager {
         gain_level: GainLevel,
         crossfade_samples: usize,
     ) {
-        let key = ModelKey {
+        let id = ModelId::BuiltIn(ModelKey {
             sensitivity,
             gain_level,
-        };
-
-        if self.current_key == key {
-            self.pending = None;
-            return;
-        }
-
-        if !self.models.contains_key(&key) {
-            log::warn!("Model not found for key: {:?}", key);
-            return;
-        }
-
-        let filename = &self.models.get(&key).unwrap().filename;
-        let sens_str = match sensitivity {
-            Sensitivity::High => "Hi",
-            Sensitivity::Low => "Lo",
-        };
-        let g_num = gain_level.g_number();
-        eprintln!("[NAM] Switched: {} Gain G{}", sens_str, g_num);
-        log::info!("Switching to model: {} (Gain G{}, {})", filename, g_num, sens_str);
-
-        if self.fade.is_some() {
-            // Do not overlap fades; queue the latest request for when the
-            // current blend completes (~20ms).
-            self.pending = Some((key, crossfade_samples));
-            return;
-        }
-
-        self.begin_switch(key, crossfade_samples);
+        });
+        self.switch_to_id(id, crossfade_samples);
     }
 }
