@@ -1,6 +1,8 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useAmpSettings } from './hooks/useAmpSettings';
 import { useAudioStatus } from './hooks/useAudioStatus';
+import TitleBar from './components/TitleBar';
 import AmpPanel from './components/AmpPanel';
 import PowerSwitch from './components/PowerSwitch';
 import SettingsIcon from './components/SettingsIcon';
@@ -9,14 +11,29 @@ import SettingsPanel from './components/SettingsPanel';
 import Tuner from './components/Tuner';
 import AudioStatusBar from './components/AudioStatusBar';
 import Toast from './components/Toast';
-import { saveNamFileUnnamed, saveIrFile, logToTerminal } from './tauri';
+import {
+  loadNamFromBytes,
+  loadNamFromPath,
+  loadIr,
+  saveIrFile,
+  logToTerminal,
+} from './tauri';
 import { notifyError } from './notifications';
 import './App.css';
 
+/** Pending NAM file waiting for user confirmation */
+interface PendingNam {
+  filename: string;
+  path: string;
+}
+
+/** True when running inside the Tauri webview (native drag-drop events available). */
+const isTauri = () => '__TAURI_INTERNALS__' in window;
+
 /** Log to both the browser console and the backend OS terminal. */
-function log(msg: string) {
-  console.log(msg);
-  void logToTerminal(msg);
+function log(...args: unknown[]) {
+  console.log(...args);
+  void logToTerminal(args.map((arg) => String(arg)).join(' '));
 }
 
 function App() {
@@ -27,53 +44,109 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   const dragCounter = useRef(0);
 
-  /** Handle saving from unnamed mode: open settings */
-  const handleSaveUnnamedFromHeader = () => {
-    setShowSettings(true);
-  };
+  // Confirmation dialog state for NAM files
+  const [pendingNam, setPendingNam] = useState<PendingNam | null>(null);
 
-  /** Read a File object as base64 string */
-  const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64 = result.split(',')[1];
-        resolve(base64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
+  /** Extract the file name from a path reported by Tauri's native drop event. */
+  const fileNameFromPath = (path: string) =>
+    path.split(/[\\/]/).pop() ?? path;
 
-  /** Process a dropped file: save it and load into audio engine */
-  const handleDroppedFile = async (file: File) => {
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    log('[IMPORT] handleDroppedFile:', file.name, 'ext:', ext);
+  /**
+   * Process a dropped file path: load it into the audio engine and notify the UI.
+   * Tauri's native drag-drop event only exposes paths, never File objects.
+   */
+  const handleDroppedPath = useCallback(async (path: string) => {
+    const filename = fileNameFromPath(path);
+    const ext = filename.split('.').pop()?.toLowerCase();
+    log('[IMPORT] dropped file:', filename, 'ext:', ext);
 
     try {
-      const base64 = await readFileAsBase64(file);
-
       if (ext === 'nam') {
-        const path = await saveNamFileUnnamed(file.name, base64);
-        log('[IMPORT] handleDroppedFile: NAM saved to', path);
-        window.dispatchEvent(new CustomEvent('load-unnamed-nam', { detail: path }));
+        // Show a confirmation dialog before replacing the current model.
+        setPendingNam({ filename, path });
       } else if (ext === 'wav') {
-        const path = await saveIrFile(file.name, base64);
-        log('[IMPORT] handleDroppedFile: IR saved to', path);
+        // load_ir reads and installs the IR in the backend (not just a UI label).
+        const irName = await loadIr(path);
+        log('[IMPORT] IR loaded:', irName);
         window.dispatchEvent(new CustomEvent('load-unnamed-ir', { detail: path }));
       } else {
-        log('[IMPORT] handleDroppedFile: unsupported extension', ext);
         notifyError(`Unsupported file type: .${ext}`);
       }
     } catch (err) {
-      log('[IMPORT] handleDroppedFile: FAILED', err);
+      log('[IMPORT] file load FAILED', err);
       notifyError(`Could not load file: ${err}`);
+    }
+  }, []);
+
+  /** Confirm and load the pending NAM file. */
+  const handleConfirmLoadNam = async () => {
+    const pending = pendingNam;
+    if (!pending) return;
+    setPendingNam(null);
+    try {
+      const modelName = await loadNamFromPath(pending.path);
+      log('[IMPORT] NAM loaded:', modelName);
+      window.dispatchEvent(new CustomEvent('load-unnamed-nam', { detail: modelName }));
+    } catch (err) {
+      log('[IMPORT] NAM load FAILED', err);
+      notifyError(`Could not load NAM file: ${err}`);
     }
   };
 
-  // Drag-and-drop handlers on the root app div
+  /** Cancel loading the pending NAM file. */
+  const handleCancelLoadNam = () => {
+    const filename = pendingNam?.filename;
+    setPendingNam(null);
+    if (filename) {
+      log('[IMPORT] NAM load cancelled:', filename);
+    }
+  };
+
+  // Native drag-and-drop: browsers' onDrop does not fire for OS file drops in
+  // the Tauri webview, so listen to the webview event which carries file paths.
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+
+    getCurrentWebviewWindow()
+      .onDragDropEvent((event) => {
+        switch (event.payload.type) {
+          case 'enter':
+          case 'over':
+            setDragOver(true);
+            break;
+          case 'leave':
+            setDragOver(false);
+            break;
+          case 'drop':
+            setDragOver(false);
+            dragCounter.current = 0;
+            if (event.payload.paths.length > 0) {
+              void handleDroppedPath(event.payload.paths[0]);
+            }
+            break;
+        }
+      })
+      .then((fn) => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      })
+      .catch((err) => {
+        log('[DROP] Could not register native drag-drop listener:', err);
+      });
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [handleDroppedPath]);
+
+  // Fallback for a plain browser (e.g. `npm run dev` / `npm run preview`),
+  // where native Tauri events do not exist and HTML5 drop events do work.
   const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (isTauri()) return;
     e.preventDefault();
     e.stopPropagation();
     dragCounter.current++;
@@ -81,6 +154,7 @@ function App() {
   }, []);
 
   const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (isTauri()) return;
     e.preventDefault();
     e.stopPropagation();
     dragCounter.current--;
@@ -90,20 +164,43 @@ function App() {
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (isTauri()) return;
     e.preventDefault();
     e.stopPropagation();
   }, []);
 
   const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (isTauri()) return;
     e.preventDefault();
     e.stopPropagation();
     dragCounter.current = 0;
     setDragOver(false);
 
     const files = e.dataTransfer.files;
-    log('[DROP] handleDrop: received', files.length, 'file(s)', files.length > 0 ? files[0].name : '');
+    log('[DROP] handleDrop: received', files.length, 'file(s)');
     if (files.length > 0) {
-      void handleDroppedFile(files[0]);
+      // In a browser we cannot get file contents from the native path, so use
+      // the backend's byte-based loader for this fallback path.
+      const file = files[0];
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        try {
+          if (ext === 'nam') {
+            const modelName = await loadNamFromBytes(file.name, base64);
+            window.dispatchEvent(new CustomEvent('load-unnamed-nam', { detail: modelName }));
+          } else if (ext === 'wav') {
+            const path = await saveIrFile(file.name, base64);
+            window.dispatchEvent(new CustomEvent('load-unnamed-ir', { detail: path }));
+          } else {
+            notifyError(`Unsupported file type: .${ext}`);
+          }
+        } catch (err) {
+          notifyError(`Could not load file: ${err}`);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   }, []);
 
@@ -127,6 +224,7 @@ function App() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
+      <TitleBar />
       <SettingsIcon onClick={() => setShowSettings(true)} />
       <TunerIcon onClick={() => setShowTuner(true)} />
       <AudioStatusBar status={audioStatus} />
@@ -134,7 +232,6 @@ function App() {
       <SettingsPanel
         open={showSettings}
         onClose={() => setShowSettings(false)}
-        onSaveUnnamed={handleSaveUnnamedFromHeader}
         settings={settings}
         onSetInputVolume={setInputVolume}
         onSetGate={setGate}
@@ -159,6 +256,26 @@ function App() {
           <div className="drop-zone-content">
             <span className="drop-zone-icon">🎸</span>
             <p>Drop NAM or IR file to load</p>
+          </div>
+        </div>
+      )}
+      {/* Confirmation dialog for NAM file loading */}
+      {pendingNam && (
+        <div className="confirm-dialog-overlay" onClick={handleCancelLoadNam}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <p className="confirm-dialog-title">Load NAM model?</p>
+            <p className="confirm-dialog-message">
+              This will replace the currently loaded model.
+            </p>
+            <p className="confirm-dialog-filename">{pendingNam.filename}</p>
+            <div className="confirm-dialog-buttons">
+              <button className="confirm-dialog-btn cancel" onClick={handleCancelLoadNam}>
+                Cancel
+              </button>
+              <button className="confirm-dialog-btn load" onClick={handleConfirmLoadNam}>
+                Load
+              </button>
+            </div>
           </div>
         </div>
       )}
