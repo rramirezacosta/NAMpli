@@ -8,11 +8,12 @@ import {
   setBufferSize as tauriSetBufferSize,
   getAudioStatus as tauriGetAudioStatus,
   setNoiseGate as tauriSetNoiseGate,
-  loadIr as tauriLoadIr,
   clearIr as tauriClearIr,
   setIrMix as tauriSetIrMix,
+  importAsset,
 } from '../tauri';
 import type { AudioDeviceInfo } from '../tauri';
+import type { AssetRef } from '../types/preset';
 import { notifyError } from '../notifications';
 import './SettingsPanel.css';
 
@@ -28,6 +29,8 @@ interface SettingsPanelProps {
   onSetMiddle: (v: number) => void;
   onSetTreble: (v: number) => void;
   onSetOutputVolume: (v: number) => void;
+  onIrImported: (asset: AssetRef) => void;
+  onIrCleared: () => void;
 }
 
 const BUFFER_SIZE_OPTIONS = [
@@ -55,6 +58,8 @@ export default function SettingsPanel({
   onSetMiddle: _onSetMiddle,
   onSetTreble: _onSetTreble,
   onSetOutputVolume: _onSetOutputVolume,
+  onIrImported,
+  onIrCleared,
 }: SettingsPanelProps) {
   const [hosts, setHosts] = useState<string[]>([]);
   const [selectedHost, setSelectedHost] = useState<string>('');
@@ -194,8 +199,10 @@ export default function SettingsPanel({
         filters: [{ name: 'Cabinet Impulse Response (WAV)', extensions: ['wav'] }],
       });
       if (!selected || Array.isArray(selected)) return;
-      const name = await tauriLoadIr(selected);
-      setIrName(name);
+      const filename = selected.split(/[\\/]/).pop() ?? selected;
+      const asset = await importAsset('ir', filename, selected);
+      setIrName(asset.name);
+      onIrImported(asset);
     } catch (err) {
       console.error('Failed to load cabinet IR:', err);
       notifyError(`Could not load that impulse response: ${err}`);
@@ -206,6 +213,7 @@ export default function SettingsPanel({
     try {
       await tauriClearIr();
       setIrName(null);
+      onIrCleared();
     } catch (err) {
       console.error('Failed to clear cabinet IR:', err);
       notifyError('Could not remove the cabinet IR.');

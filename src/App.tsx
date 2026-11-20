@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { useAmpSettings } from './hooks/useAmpSettings';
+import { useRigState } from './hooks/useRigState';
+import { usePresetManager } from './hooks/usePresetManager';
 import { useAudioStatus } from './hooks/useAudioStatus';
 import TitleBar from './components/TitleBar';
 import AmpPanel from './components/AmpPanel';
@@ -11,13 +12,8 @@ import SettingsPanel from './components/SettingsPanel';
 import Tuner from './components/Tuner';
 import AudioStatusBar from './components/AudioStatusBar';
 import Toast from './components/Toast';
-import {
-  loadNamFromBytes,
-  loadNamFromPath,
-  loadIr,
-  saveIrFile,
-  logToTerminal,
-} from './tauri';
+import PresetLibrary from './components/PresetLibrary';
+import { importAsset, logToTerminal } from './tauri';
 import { notifyError } from './notifications';
 import './App.css';
 
@@ -39,6 +35,7 @@ function log(...args: unknown[]) {
 function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTuner, setShowTuner] = useState(false);
+  const [showLibrary, setShowLibrary] = useState(false);
 
   // Drag-and-drop state for unnamed mode
   const [dragOver, setDragOver] = useState(false);
@@ -47,13 +44,29 @@ function App() {
   // Confirmation dialog state for NAM files
   const [pendingNam, setPendingNam] = useState<PendingNam | null>(null);
 
+  const rig = useRigState();
+  const presetManager = usePresetManager(rig.snapshot(), rig.applySnapshot);
+  const {
+    settings,
+    setInputVolume,
+    setGate,
+    setBass,
+    setMiddle,
+    setTreble,
+    setOutputVolume,
+    togglePower,
+    setModel,
+    setIr,
+  } = rig;
+  const audioStatus = useAudioStatus();
+
   /** Extract the file name from a path reported by Tauri's native drop event. */
   const fileNameFromPath = (path: string) =>
     path.split(/[\\/]/).pop() ?? path;
 
   /**
-   * Process a dropped file path: load it into the audio engine and notify the UI.
-   * Tauri's native drag-drop event only exposes paths, never File objects.
+   * Process a dropped file path: import a copy into the preset asset library and
+   * load it into the audio engine. Tauri's native drag-drop only exposes paths.
    */
   const handleDroppedPath = useCallback(async (path: string) => {
     const filename = fileNameFromPath(path);
@@ -65,10 +78,9 @@ function App() {
         // Show a confirmation dialog before replacing the current model.
         setPendingNam({ filename, path });
       } else if (ext === 'wav') {
-        // load_ir reads and installs the IR in the backend (not just a UI label).
-        const irName = await loadIr(path);
-        log('[IMPORT] IR loaded:', irName);
-        window.dispatchEvent(new CustomEvent('load-unnamed-ir', { detail: path }));
+        const asset = await importAsset('ir', filename, path);
+        setIr(asset);
+        log('[IMPORT] IR loaded:', asset.name);
       } else {
         notifyError(`Unsupported file type: .${ext}`);
       }
@@ -76,7 +88,7 @@ function App() {
       log('[IMPORT] file load FAILED', err);
       notifyError(`Could not load file: ${err}`);
     }
-  }, []);
+  }, [setIr]);
 
   /** Confirm and load the pending NAM file. */
   const handleConfirmLoadNam = async () => {
@@ -84,9 +96,9 @@ function App() {
     if (!pending) return;
     setPendingNam(null);
     try {
-      const modelName = await loadNamFromPath(pending.path);
-      log('[IMPORT] NAM loaded:', modelName);
-      window.dispatchEvent(new CustomEvent('load-unnamed-nam', { detail: modelName }));
+      const asset = await importAsset('nam', pending.filename, pending.path);
+      setModel(asset);
+      log('[IMPORT] NAM loaded:', asset.name);
     } catch (err) {
       log('[IMPORT] NAM load FAILED', err);
       notifyError(`Could not load NAM file: ${err}`);
@@ -179,8 +191,7 @@ function App() {
     const files = e.dataTransfer.files;
     log('[DROP] handleDrop: received', files.length, 'file(s)');
     if (files.length > 0) {
-      // In a browser we cannot get file contents from the native path, so use
-      // the backend's byte-based loader for this fallback path.
+      // A browser cannot resolve the native path, so send base64 bytes instead.
       const file = files[0];
       const reader = new FileReader();
       reader.onload = async () => {
@@ -188,11 +199,11 @@ function App() {
         const ext = file.name.split('.').pop()?.toLowerCase();
         try {
           if (ext === 'nam') {
-            const modelName = await loadNamFromBytes(file.name, base64);
-            window.dispatchEvent(new CustomEvent('load-unnamed-nam', { detail: modelName }));
+            const asset = await importAsset('nam', file.name, undefined, base64);
+            setModel(asset);
           } else if (ext === 'wav') {
-            const path = await saveIrFile(file.name, base64);
-            window.dispatchEvent(new CustomEvent('load-unnamed-ir', { detail: path }));
+            const asset = await importAsset('ir', file.name, undefined, base64);
+            setIr(asset);
           } else {
             notifyError(`Unsupported file type: .${ext}`);
           }
@@ -202,19 +213,7 @@ function App() {
       };
       reader.readAsDataURL(file);
     }
-  }, []);
-
-  const {
-    settings,
-    setInputVolume,
-    setGate,
-    setBass,
-    setMiddle,
-    setTreble,
-    setOutputVolume,
-    togglePower,
-  } = useAmpSettings();
-  const audioStatus = useAudioStatus();
+  }, [setModel, setIr]);
 
   return (
     <div
@@ -239,7 +238,10 @@ function App() {
         onSetMiddle={setMiddle}
         onSetTreble={setTreble}
         onSetOutputVolume={setOutputVolume}
+        onIrImported={setIr}
+        onIrCleared={() => setIr(null)}
       />
+      <PresetLibrary open={showLibrary} onClose={() => setShowLibrary(false)} manager={presetManager} />
       {showTuner && (
         <div className="tuner-popup-overlay" onClick={() => setShowTuner(false)}>
           <div className="tuner-popup" onClick={(e) => e.stopPropagation()}>
@@ -288,6 +290,10 @@ function App() {
           treble={settings.treble}
           outputVolume={settings.outputVolume}
           powerOn={settings.powerOn}
+          modelName={rig.model?.name ?? null}
+          irName={rig.ir?.name ?? null}
+          presetManager={presetManager}
+          onOpenLibrary={() => setShowLibrary(true)}
           onSetInputVolume={setInputVolume}
           onSetGate={setGate}
           onSetBass={setBass}

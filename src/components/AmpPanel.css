@@ -1,5 +1,5 @@
 .amp-panel {
-  padding: 2rem 2rem 2.5rem;
+  padding: 1.25rem 2rem 2rem;
   max-width: 900px;
   width: 100%;
   transition: box-shadow 0.3s ease;
@@ -62,8 +62,8 @@
 
 .panel-header {
   text-align: center;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
   border-bottom: 2px solid rgba(212, 175, 55, 0.4);
   position: relative;
   z-index: 1;

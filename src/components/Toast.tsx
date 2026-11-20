@@ -30,8 +30,10 @@ export default function Toast() {
   return (
     <div className="toast-stack" role="status" aria-live="polite">
       {notices.map((notice) => (
-        <div key={notice.id} className="toast">
-          <span className="toast-icon">!</span>
+        <div key={notice.id} className={`toast ${notice.kind}`}>
+          <span className={`toast-icon ${notice.kind}`}>
+            {notice.kind === 'success' ? '✓' : '!'}
+          </span>
           <span className="toast-message">{notice.message}</span>
           <button
             className="toast-close"

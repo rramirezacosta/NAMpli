@@ -37,6 +37,24 @@
   text-align: center;
 }
 
+.toast.success {
+  background: #15251a;
+  border-color: rgba(110, 200, 130, 0.55);
+}
+
+.toast.success .toast-icon {
+  background: #6ec882;
+  color: #0e1a12;
+}
+
+.toast.success .toast-message {
+  color: #d8f0dc;
+}
+
+.toast.success .toast-close {
+  color: #9cc9a5;
+}
+
 .toast-message {
   flex: 1;
   font-size: 0.8rem;

@@ -1,4 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
+import type {
+  AssetRef,
+  PresetMeta,
+  PresetPayload,
+} from './types/preset';
 
 export interface AudioDeviceInfo {
   id: string;
@@ -128,6 +133,55 @@ export async function loadNamFromPath(path: string): Promise<string> {
 
 export async function saveIrFile(filename: string, data: string): Promise<string> {
   return invoke('save_ir_file', { filename, data });
+}
+
+// --- Presets -------------------------------------------------------------
+
+export async function listPresets(): Promise<PresetMeta[]> {
+  return invoke('list_presets');
+}
+
+export async function savePreset(preset: PresetPayload): Promise<void> {
+  return invoke('save_preset', { preset });
+}
+
+/** Loads the NAM/IR in the backend and returns the payload for UI sync. */
+export async function loadPreset(name: string): Promise<PresetPayload> {
+  return invoke('load_preset', { name });
+}
+
+export async function deletePreset(name: string): Promise<void> {
+  return invoke('delete_preset', { name });
+}
+
+export async function renamePreset(name: string, newName: string): Promise<void> {
+  return invoke('rename_preset', { name, newName });
+}
+
+export async function exportPreset(name: string): Promise<string> {
+  return invoke('export_preset', { name });
+}
+
+export async function exportPresetToPath(name: string, path: string): Promise<void> {
+  return invoke('export_preset_to_path', { name, path });
+}
+
+export async function importPreset(json: string): Promise<PresetMeta> {
+  return invoke('import_preset', { json });
+}
+
+export async function importPresetFromPath(path: string): Promise<PresetMeta> {
+  return invoke('import_preset_from_path', { path });
+}
+
+/** Store a copy of a dropped NAM/IR in the library and load it into the engine. */
+export async function importAsset(
+  kind: 'nam' | 'ir',
+  filename: string,
+  path?: string,
+  data?: string,
+): Promise<AssetRef> {
+  return invoke('import_asset', { kind, filename, path: path ?? null, data: data ?? null });
 }
 
 export async function logToTerminal(msg: string): Promise<void> {

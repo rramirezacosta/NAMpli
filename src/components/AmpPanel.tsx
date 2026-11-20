@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
-import Knob from "./Knob";
-import "./AmpPanel.css";
+import Knob from './Knob';
+import PresetBar from './PresetBar';
+import type { PresetManager } from '../hooks/usePresetManager';
+import './AmpPanel.css';
 
 interface AmpPanelProps {
   inputVolume: number;
@@ -10,6 +11,10 @@ interface AmpPanelProps {
   treble: number;
   outputVolume: number;
   powerOn: boolean;
+  modelName: string | null;
+  irName: string | null;
+  presetManager: PresetManager;
+  onOpenLibrary: () => void;
   onSetInputVolume: (v: number) => void;
   onSetGate: (v: number) => void;
   onSetBass: (v: number) => void;
@@ -18,7 +23,7 @@ interface AmpPanelProps {
   onSetOutputVolume: (v: number) => void;
 }
 
-const BYPASS_SUBTITLE = "No NAM or IR loaded";
+const BYPASS_SUBTITLE = 'No NAM or IR loaded';
 
 export default function AmpPanel({
   inputVolume,
@@ -28,6 +33,10 @@ export default function AmpPanel({
   treble,
   outputVolume,
   powerOn,
+  modelName,
+  irName,
+  presetManager,
+  onOpenLibrary,
   onSetInputVolume,
   onSetGate,
   onSetBass,
@@ -35,44 +44,19 @@ export default function AmpPanel({
   onSetTreble,
   onSetOutputVolume,
 }: AmpPanelProps) {
-  const [modelName, setModelName] = useState<string | null>(null);
-  const [irName, setIrName] = useState<string | null>(null);
-
-  useEffect(() => {
-    const handleNamEvent = (e: Event) => {
-      // Detail is now the model name directly (e.g. "MyAmp.nam")
-      const name = ((e as CustomEvent).detail as string).replace(/\.nam$/i, "");
-      setModelName(name);
-    };
-    const handleIrEvent = (e: Event) => {
-      const path = (e as CustomEvent).detail as string;
-      const fileName = path.split("/").pop() ?? path.split("\\").pop() ?? path;
-      const name = fileName.replace(/\.wav$/i, "");
-      setIrName(name);
-    };
-    window.addEventListener("load-unnamed-nam", handleNamEvent);
-    window.addEventListener("load-unnamed-ir", handleIrEvent);
-    return () => {
-      window.removeEventListener("load-unnamed-nam", handleNamEvent);
-      window.removeEventListener("load-unnamed-ir", handleIrEvent);
-    };
-  }, []);
-
-  // Build subtitle from loaded model/IR names
   const subtitleParts: string[] = [];
-  if (modelName) subtitleParts.push(modelName);
-  if (irName) subtitleParts.push(`IR: ${irName}`);
-  const subtitle = subtitleParts.length
-    ? subtitleParts.join(" · ")
-    : BYPASS_SUBTITLE;
+  if (modelName) subtitleParts.push(modelName.replace(/\.nam$/i, ''));
+  if (irName) subtitleParts.push(`IR: ${irName.replace(/\.wav$/i, '')}`);
+  const subtitle = subtitleParts.length ? subtitleParts.join(' · ') : BYPASS_SUBTITLE;
 
   return (
-    <div className={`amp-panel ${powerOn ? "power-on" : "power-off"}`}>
+    <div className={`amp-panel ${powerOn ? 'power-on' : 'power-off'}`}>
       <div className="panel-header">
         <div className="panel-title-group">
           <h1 className="panel-title">NAMpli</h1>
           <p className="panel-subtitle">{subtitle}</p>
         </div>
+        <PresetBar manager={presetManager} onOpenLibrary={onOpenLibrary} />
       </div>
 
       <div className="knob-row">
