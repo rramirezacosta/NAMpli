@@ -31,10 +31,6 @@ export async function setAudioDevices(
   return invoke('set_audio_devices', { inputDevice, outputDevice });
 }
 
-export async function setGainLevel(level: number): Promise<void> {
-  return invoke('set_gain_level', { level });
-}
-
 export async function setBass(value: number): Promise<void> {
   return invoke('set_bass', { value });
 }
@@ -102,40 +98,12 @@ export async function getTuner(): Promise<TunerStatus> {
   return invoke('get_tuner');
 }
 
-export async function setSensitivity(sensitivity: 'high' | 'low'): Promise<void> {
-  return invoke('set_sensitivity', { sensitivity });
-}
-
 export async function togglePower(): Promise<boolean> {
   return invoke('toggle_power');
 }
 
 export async function setBufferSize(size: number): Promise<void> {
   return invoke('set_buffer_size', { size });
-}
-
-export async function listPresets(): Promise<string[]> {
-  return invoke('list_presets');
-}
-
-export async function savePreset(name: string, content: string): Promise<void> {
-  return invoke('save_preset', { name, content });
-}
-
-export async function loadPreset(name: string): Promise<string> {
-  return invoke('load_preset', { name });
-}
-
-export async function deletePreset(name: string): Promise<void> {
-  return invoke('delete_preset', { name });
-}
-
-export async function listNamModels(): Promise<string[]> {
-  return invoke('list_nam_models');
-}
-
-export async function setNamModel(index: number): Promise<void> {
-  return invoke('set_nam_model', { index });
 }
 
 export async function listAudioHosts(): Promise<string[]> {
@@ -150,18 +118,31 @@ export async function setAudioHost(host?: string): Promise<void> {
   return invoke('set_audio_host', { host });
 }
 
-export async function saveNamFileUnnamed(filename: string, data: string): Promise<string> {
-  return invoke('save_nam_file_unnamed', { filename, data });
+export async function loadNamFromBytes(filename: string, data: string): Promise<string> {
+  return invoke('load_nam_from_bytes', { filename, data });
+}
+
+export async function loadNamFromPath(path: string): Promise<string> {
+  return invoke('load_nam_from_path', { path });
 }
 
 export async function saveIrFile(filename: string, data: string): Promise<string> {
   return invoke('save_ir_file', { filename, data });
 }
 
-export async function loadNamByPath(path: string): Promise<string> {
-  return invoke('load_nam_by_path', { path });
-}
-
 export async function logToTerminal(msg: string): Promise<void> {
   return invoke('log_to_terminal', { msg });
+}
+
+export type WindowControlsSide = 'left' | 'right';
+
+export interface WindowControlsInfo {
+  side: WindowControlsSide;
+  source: string;
+  layout: string | null;
+}
+
+/** Which side of the title bar the OS places its window controls on. */
+export async function getWindowControlsInfo(): Promise<WindowControlsInfo> {
+  return invoke('get_window_controls_info');
 }
