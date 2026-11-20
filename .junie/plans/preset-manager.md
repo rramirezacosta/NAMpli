@@ -35,7 +35,7 @@ but a copy is also stored so the preset can recall it later. The app still start
 ### Out of Scope
 - **SettingsPanel values** — noise gate enable/threshold/decay, cabinet mix, buffer size,
   audio host/device selection — are global and **not** stored in presets. `SettingsPanel.tsx`
-  is unchanged by this work.
+  only changes so IRs loaded through its dialog are also imported into the asset library.
 - Power state, window state, MIDI footswitch control, cloud sync, factory preset packs.
 - Reintroducing the deleted `InputJacks` model-switcher UI or loading built-in NAMs at startup.
 - Changing DSP algorithms, the tuner, or audio-device enumeration.
@@ -120,7 +120,7 @@ interface PresetPayload {
   name: string;
   bank: Bank;
   slot: 1 | 2 | 3 | 4;
-  updatedAt: string;       // RFC 3339
+  updatedAt: number;       // epoch milliseconds
   rig: RigSnapshot;
 }
 
@@ -172,7 +172,8 @@ graph TD
     null) and IR via `load_ir` (or `clear_ir` when `ir` is null), then **returns the payload**;
     knob application is done by the frontend.
   - `delete_preset`, `rename_preset`, `export_preset -> String`,
-    `import_preset(json: String) -> PresetMeta`.
+    `export_preset_to_path`, `import_preset(json: String) -> PresetMeta`,
+    `import_preset_from_path`.
   - Keep `presets_dir` / `sanitize_preset_name`; add `library_dir(kind)` and a sha256-deduping
     `store_asset_bytes` helper.
 - Add `import_asset(kind: 'nam' | 'ir', filename: String, path: Option<String>, data: Option<String>)
@@ -218,7 +219,8 @@ graph TD
 - `src/App.tsx`: instantiate `useRigState` + `usePresetManager`; route drops through `importAsset`
   and feed the returned refs into rig state (marking dirty); render the library modal; pass props.
 - `src/App.css` / `AmpPanel.css`: small layout adjustments so the bar fits the 650px window.
-- **`src/components/SettingsPanel.tsx`: no changes.**
+- **`src/components/SettingsPanel.tsx`**: IR dialog imports through `importAsset` and reports the
+      resulting `AssetRef` to rig state, so an IR loaded there is captured by presets.
 
 ### Delivery Steps
 
