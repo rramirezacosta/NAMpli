@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import type { AmpSettings } from '../types/amp';
 import { DEFAULT_SETTINGS } from '../types/amp';
+import type { AssetRef, RigSnapshot } from '../types/preset';
 import { notifyError } from '../notifications';
 import {
   setBass as tauriSetBass,
@@ -12,8 +13,14 @@ import {
   togglePower as tauriTogglePower,
 } from '../tauri';
 
-export function useAmpSettings() {
+/**
+ * Single source of truth for everything a preset captures: the six front-panel
+ * knobs plus the currently loaded NAM and IR. Power is intentionally excluded.
+ */
+export function useRigState() {
   const [settings, setSettings] = useState<AmpSettings>(DEFAULT_SETTINGS);
+  const [model, setModel] = useState<AssetRef | null>(null);
+  const [ir, setIr] = useState<AssetRef | null>(null);
 
   const setInputVolume = useCallback(async (value: number) => {
     setSettings((prev) => ({ ...prev, inputVolume: value }));
@@ -87,8 +94,41 @@ export function useAmpSettings() {
     }
   }, []);
 
+  const snapshot = useCallback(
+    (): RigSnapshot => ({
+      inputVolume: settings.inputVolume,
+      gate: settings.gate,
+      bass: settings.bass,
+      middle: settings.middle,
+      treble: settings.treble,
+      outputVolume: settings.outputVolume,
+      model,
+      ir,
+    }),
+    [settings, model, ir],
+  );
+
+  /** Recall a preset: update React state and push the knobs to the backend. */
+  const applySnapshot = useCallback(
+    (next: RigSnapshot) => {
+      setModel(next.model);
+      setIr(next.ir);
+      void setInputVolume(next.inputVolume);
+      void setGate(next.gate);
+      void setBass(next.bass);
+      void setMiddle(next.middle);
+      void setTreble(next.treble);
+      void setOutputVolume(next.outputVolume);
+    },
+    [setInputVolume, setGate, setBass, setMiddle, setTreble, setOutputVolume],
+  );
+
   return {
     settings,
+    model,
+    ir,
+    setModel,
+    setIr,
     setInputVolume,
     setGate,
     setBass,
@@ -96,5 +136,9 @@ export function useAmpSettings() {
     setTreble,
     setOutputVolume,
     togglePower,
+    snapshot,
+    applySnapshot,
   };
 }
+
+export type RigState = ReturnType<typeof useRigState>;
