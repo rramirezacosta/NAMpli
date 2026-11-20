@@ -4,10 +4,10 @@ mod commands;
 mod eq;
 mod ir;
 mod tuner;
+mod window_controls;
 
 use audio_engine::AudioEngine;
 use model_manager::ModelManager;
-use std::path::PathBuf;
 use std::sync::Mutex as StdMutex;
 use tauri::Manager;
 
@@ -24,18 +24,8 @@ pub fn run() {
                 )?;
             }
 
-            // Find the nams directory
-            let nams_dir = if cfg!(debug_assertions) {
-                PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../nams")
-            } else {
-                app.path().resource_dir().unwrap().join("nams")
-            };
-
-            log::info!("Loading NAM models from: {}", nams_dir.display());
-
-            // Load all NAM models
-            let model_manager = ModelManager::new(&nams_dir)
-                .map_err(|e| anyhow::anyhow!("Failed to load NAM models: {}", e))?;
+            // Start with no NAM model loaded (bypass mode)
+            let model_manager = ModelManager::new();
 
             // Create audio engine
             let engine = AudioEngine::new(model_manager);
@@ -46,14 +36,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::list_audio_hosts,
             commands::list_audio_devices,
-            commands::list_nam_models,
-            commands::set_nam_model,
             commands::start_audio,
             commands::set_audio_devices,
             commands::set_audio_host,
             commands::stop_audio,
-            commands::set_gain_level,
-            commands::set_sensitivity,
             commands::set_bass,
             commands::set_middle,
             commands::set_treble,
@@ -72,10 +58,11 @@ pub fn run() {
             commands::load_preset,
             commands::delete_preset,
             commands::toggle_power,
-            commands::save_nam_file_unnamed,
+            commands::load_nam_from_bytes,
+            commands::load_nam_from_path,
             commands::save_ir_file,
-            commands::load_nam_by_path,
             commands::log_to_terminal,
+            window_controls::get_window_controls_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

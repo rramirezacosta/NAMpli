@@ -1,6 +1,6 @@
 use crate::eq::EqChain;
 use crate::ir::CabinetIr;
-use crate::model_manager::{GainLevel, ModelManager, Sensitivity};
+use crate::model_manager::ModelManager;
 use crate::tuner::Tuner;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, SupportedStreamConfig, SupportedStreamConfigRange};
@@ -78,8 +78,6 @@ pub struct AudioStatus {
 
 /// Shared state between UI thread and audio thread
 pub struct SharedState {
-    pub sensitivity: Sensitivity,
-    pub gain_level: GainLevel,
     pub bass: f32,
     pub middle: f32,
     pub treble: f32,
@@ -105,8 +103,6 @@ pub struct SharedState {
 impl SharedState {
     pub fn new() -> Self {
         SharedState {
-            sensitivity: Sensitivity::High,
-            gain_level: GainLevel::new(1),
             // The NAM captures already include the amp's tone stack at
             // P6 B8 M4 T7, so these are *additional* shaping filters and should
             // start neutral (0 dB) rather than doubling the captured EQ.
@@ -675,43 +671,6 @@ impl AudioEngine {
         log::info!("Audio engine stopped");
     }
 
-    pub fn set_gain_level(&self, level: u32) {
-        let gain_level = GainLevel::new(level);
-        let (sensitivity, sample_rate) = {
-            let mut state = self.state.lock();
-            state.gain_level = gain_level;
-            (state.sensitivity, state.sample_rate)
-        };
-        let crossfade = (MODEL_CROSSFADE_MS * sample_rate as f32 / 1000.0) as usize;
-        {
-            let mut mm = self.model_manager.lock();
-            mm.switch_model(sensitivity, gain_level, crossfade);
-        }
-        log::info!("Gain level set to {}", level);
-    }
-
-    pub fn set_sensitivity(&self, sensitivity: &str) {
-        let sensitivity = Sensitivity::from_str(sensitivity);
-        let (gain_level, sample_rate) = {
-            let mut state = self.state.lock();
-            state.sensitivity = sensitivity;
-            (state.gain_level, state.sample_rate)
-        };
-        let crossfade = (MODEL_CROSSFADE_MS * sample_rate as f32 / 1000.0) as usize;
-        {
-            let mut mm = self.model_manager.lock();
-            mm.switch_model(sensitivity, gain_level, crossfade);
-        }
-        log::info!(
-            "Sensitivity set to {}",
-            if sensitivity == Sensitivity::High {
-                "High"
-            } else {
-                "Low"
-            }
-        );
-    }
-
     pub fn set_bass(&self, value: f32) {
         {
             let mut state = self.state.lock();
@@ -842,42 +801,21 @@ impl AudioEngine {
         Ok(())
     }
 
-    /// Select one of the preloaded NAM models by index.
-    pub fn set_nam_model(&self, index: usize) {
-        let sample_rate = self.state.lock().sample_rate;
-        let crossfade = (MODEL_CROSSFADE_MS * sample_rate as f32 / 1000.0) as usize;
-        self.model_manager.lock().switch_model_index(index, crossfade);
-        log::info!("NAM model set to index {}", index);
-    }
-
-    /// Filename of the currently active NAM model.
+    /// Filename of the currently active NAM model, or None if in bypass mode.
     pub fn nam_model_name(&self) -> Option<String> {
         self.model_manager.lock().current_model_name()
     }
 
-    /// Sorted list of all loaded NAM model filenames.
-    pub fn nam_model_names(&self) -> Vec<String> {
-        self.model_manager.lock().model_names()
-    }
-
-    /// Load a NAM model from an arbitrary file path.
-    pub fn load_nam_by_path(&self, path: &str) -> Result<String, String> {
-        use std::path::Path;
-        let p = Path::new(path);
-        let filename = p.file_name()
-            .and_then(|f| f.to_str())
-            .unwrap_or(path)
-            .to_string();
-        let bytes = std::fs::read(path)
-            .map_err(|e| format!("Could not read NAM file '{}': {}", path, e))?;
+    /// Load a NAM model from raw bytes (drag-and-drop).
+    pub fn load_nam_from_bytes(&self, filename: &str, bytes: Vec<u8>) -> Result<String, String> {
         let sample_rate = self.state.lock().sample_rate;
         let mut mm = self.model_manager.lock();
-        mm.load_model_from_bytes(&filename, bytes)
+        mm.load_model_from_bytes(filename, bytes)
             .map_err(|e| format!("Failed to load NAM '{}': {}", filename, e))?;
         let crossfade = (MODEL_CROSSFADE_MS * sample_rate as f32 / 1000.0) as usize;
-        mm.switch_model_by_key(&filename, crossfade);
-        log::info!("Loaded NAM by path: {} -> {}", path, filename);
-        Ok(filename)
+        mm.switch_model_by_key(filename, crossfade);
+        log::info!("Loaded NAM from bytes: {}", filename);
+        Ok(filename.to_string())
     }
 
     pub fn is_powered(&self) -> bool {

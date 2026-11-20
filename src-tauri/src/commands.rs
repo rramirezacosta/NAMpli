@@ -181,26 +181,6 @@ pub fn stop_audio(engine: State<'_, StdMutex<AudioEngine>>) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn set_gain_level(
-    engine: State<'_, StdMutex<AudioEngine>>,
-    level: u32,
-) -> Result<(), String> {
-    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-    engine.set_gain_level(level);
-    Ok(())
-}
-
-#[tauri::command]
-pub fn set_sensitivity(
-    engine: State<'_, StdMutex<AudioEngine>>,
-    sensitivity: String,
-) -> Result<(), String> {
-    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-    engine.set_sensitivity(&sensitivity);
-    Ok(())
-}
-
-#[tauri::command]
 pub fn set_bass(
     engine: State<'_, StdMutex<AudioEngine>>,
     value: f32,
@@ -323,24 +303,6 @@ pub fn get_tuner(
 }
 
 #[tauri::command]
-pub fn list_nam_models(
-    engine: State<'_, StdMutex<AudioEngine>>,
-) -> Vec<String> {
-    let engine = engine.lock().unwrap();
-    engine.nam_model_names()
-}
-
-#[tauri::command]
-pub fn set_nam_model(
-    engine: State<'_, StdMutex<AudioEngine>>,
-    index: usize,
-) -> Result<(), String> {
-    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-    engine.set_nam_model(index);
-    Ok(())
-}
-
-#[tauri::command]
 pub fn set_buffer_size(
     engine: State<'_, StdMutex<AudioEngine>>,
     size: usize,
@@ -428,42 +390,57 @@ pub fn toggle_power(engine: State<'_, StdMutex<AudioEngine>>) -> Result<bool, St
     }
 }
 
-/// Save a NAM file dropped from the UI into the app_data/nams/ directory
-/// (unnamed mode — not associated with any preset slot).
+/// Build a safe NAM model name/key from a user-supplied filename.
+fn sanitized_nam_name(filename: &str) -> String {
+    let stem = filename
+        .strip_suffix(".nam")
+        .unwrap_or(filename)
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == ' ')
+        .collect::<String>()
+        .trim()
+        .to_string();
+    let stem = if stem.is_empty() { "imported" } else { &stem };
+    format!("{}.nam", stem)
+}
+
+/// Load a NAM model from base64-encoded bytes (drag-and-drop, in-memory only).
 #[tauri::command]
-pub fn save_nam_file_unnamed(
-    app: AppHandle,
+pub fn load_nam_from_bytes(
+    engine: State<'_, StdMutex<AudioEngine>>,
     filename: String,
     data: String,
 ) -> Result<String, String> {
     use base64::engine::general_purpose::STANDARD as BASE64;
     use base64::Engine;
 
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Could not resolve app data dir: {}", e))?
-        .join("nams");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create nams dir: {}", e))?;
+    let final_name = sanitized_nam_name(&filename);
 
-    // Sanitize the file name
-    let safe = filename
-        .chars()
-        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == ' ')
-        .collect::<String>()
-        .trim()
-        .to_string();
-    let name = if safe.is_empty() { "imported" } else { &safe };
-    let stem = name.trim().replace(".nam", "");
-    let final_name = format!("{}.nam", stem);
-
-    let path = dir.join(&final_name);
     let bytes = BASE64
-        .decode(data)
+        .decode(&data)
         .map_err(|e| format!("Invalid base64 data: {}", e))?;
-    std::fs::write(&path, bytes).map_err(|e| format!("Could not write NAM file: {}", e))?;
 
-    Ok(path.to_string_lossy().to_string())
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    engine.load_nam_from_bytes(&final_name, bytes)
+}
+
+/// Load a NAM model directly from a filesystem path. This is used for native
+/// drag-and-drop, where Tauri only exposes the dropped file's path.
+#[tauri::command]
+pub fn load_nam_from_path(
+    engine: State<'_, StdMutex<AudioEngine>>,
+    path: String,
+) -> Result<String, String> {
+    let bytes = std::fs::read(&path)
+        .map_err(|e| format!("Could not read NAM file '{}': {}", path, e))?;
+    let filename = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "imported.nam".to_string());
+    let final_name = sanitized_nam_name(&filename);
+
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    engine.load_nam_from_bytes(&final_name, bytes)
 }
 
 /// Save an IR (WAV) file dropped from the UI into the app_data/irs/ directory.
@@ -500,16 +477,6 @@ pub fn save_ir_file(
     std::fs::write(&path, bytes).map_err(|e| format!("Could not write IR file: {}", e))?;
 
     Ok(path.to_string_lossy().to_string())
-}
-
-/// Load a NAM model from an arbitrary file path into the audio engine.
-#[tauri::command]
-pub fn load_nam_by_path(
-    engine: State<'_, StdMutex<AudioEngine>>,
-    path: String,
-) -> Result<String, String> {
-    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-    engine.load_nam_by_path(&path)
 }
 
 /// Log a message to the OS terminal (for frontend debugging).
