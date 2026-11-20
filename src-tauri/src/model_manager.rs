@@ -141,6 +141,13 @@ impl ModelManager {
         self.pending = None;
     }
 
+    /// Return to bypass mode. Cached models are kept so switching back is cheap.
+    pub fn clear_current(&mut self) {
+        self.current_key = None;
+        self.fade = None;
+        self.pending = None;
+    }
+
     /// Reset the target model and start the equal-power fade into it.
     fn begin_switch(&mut self, key: String, crossfade_samples: usize) {
         // `reset()` zeroes every internal buffer, so the new model starts from a

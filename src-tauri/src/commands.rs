@@ -1,7 +1,9 @@
 use crate::audio_engine::{AudioEngine, AudioStatus};
 use cpal::traits::{DeviceTrait, HostTrait};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
@@ -311,7 +313,133 @@ pub fn set_buffer_size(
     engine.set_buffer_size(size)
 }
 
-fn presets_dir(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+// ---------------------------------------------------------------------------
+// Presets. A preset captures exactly three things: knob state, a NAM model and
+// an IR. The model/IR files live in a local library so presets survive restarts.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetRef {
+    /// Relative path inside app_data/library, e.g. "nams/ab12cd34/JCM800.nam".
+    pub id: String,
+    /// Display name, e.g. "JCM800.nam".
+    pub name: String,
+}
+
+fn default_knob() -> f32 {
+    5.0
+}
+
+fn zero() -> f32 {
+    0.0
+}
+
+fn default_schema_version() -> u32 {
+    1
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RigSnapshot {
+    #[serde(default = "default_knob")]
+    pub input_volume: f32,
+    #[serde(default = "zero")]
+    pub gate: f32,
+    #[serde(default = "default_knob")]
+    pub bass: f32,
+    #[serde(default = "default_knob")]
+    pub middle: f32,
+    #[serde(default = "default_knob")]
+    pub treble: f32,
+    #[serde(default = "default_knob")]
+    pub output_volume: f32,
+    #[serde(default)]
+    pub model: Option<AssetRef>,
+    #[serde(default)]
+    pub ir: Option<AssetRef>,
+}
+
+impl Default for RigSnapshot {
+    fn default() -> Self {
+        RigSnapshot {
+            input_volume: 5.0,
+            gate: 0.0,
+            bass: 5.0,
+            middle: 5.0,
+            treble: 5.0,
+            output_volume: 5.0,
+            model: None,
+            ir: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetPayload {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+    pub name: String,
+    pub bank: String,
+    pub slot: u8,
+    #[serde(default)]
+    pub updated_at: u64,
+    #[serde(default)]
+    pub rig: RigSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetMeta {
+    pub name: String,
+    pub bank: String,
+    pub slot: u8,
+    pub model_name: Option<String>,
+    pub ir_name: Option<String>,
+    pub updated_at: u64,
+}
+
+/// Legacy preset files held a flat JSON string with a `modelIndex` and the knob
+/// values at the top level. Migrate those to the new nested structure.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyPreset {
+    #[serde(default = "default_knob")]
+    input_volume: f32,
+    #[serde(default = "zero")]
+    gate: f32,
+    #[serde(default = "default_knob")]
+    bass: f32,
+    #[serde(default = "default_knob")]
+    middle: f32,
+    #[serde(default = "default_knob")]
+    treble: f32,
+    #[serde(default = "default_knob")]
+    output_volume: f32,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct PresetIndex {
+    #[serde(default)]
+    entries: Vec<PresetIndexEntry>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct PresetIndexEntry {
+    name: String,
+    bank: String,
+    slot: u8,
+}
+
+fn presets_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
         .app_data_dir()
@@ -329,52 +457,409 @@ fn sanitize_preset_name(name: &str) -> String {
         .to_string()
 }
 
-#[tauri::command]
-pub fn list_presets(app: AppHandle) -> Result<Vec<String>, String> {
-    let dir = presets_dir(&app)?;
-    let mut names = Vec::new();
+fn index_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(presets_dir(app)?.join("index.json"))
+}
+
+fn load_index(app: &AppHandle) -> Result<PresetIndex, String> {
+    let path = index_path(app)?;
+    if !path.exists() {
+        return Ok(PresetIndex::default());
+    }
+    let raw = std::fs::read_to_string(&path).map_err(|e| format!("Could not read preset index: {}", e))?;
+    serde_json::from_str(&raw).map_err(|e| format!("Could not parse preset index: {}", e))
+}
+
+fn save_index(app: &AppHandle, index: &PresetIndex) -> Result<(), String> {
+    let raw = serde_json::to_string_pretty(index).map_err(|e| e.to_string())?;
+    std::fs::write(index_path(app)?, raw).map_err(|e| format!("Could not write preset index: {}", e))
+}
+
+/// Reconcile the index with the files on disk, migrating legacy presets. New
+/// files are assigned the next free slot in the 2x4 grid.
+fn sync_index(app: &AppHandle) -> Result<PresetIndex, String> {
+    let dir = presets_dir(app)?;
+    let mut index = load_index(app)?;
+    index
+        .entries
+        .retain(|entry| dir.join(format!("{}.json", entry.name)).exists());
+
+    let mut files: Vec<String> = Vec::new();
     for entry in std::fs::read_dir(&dir).map_err(|e| format!("Could not read presets: {}", e))? {
         let entry = entry.map_err(|e| format!("Bad entry: {}", e))?;
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("json") {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                names.push(stem.to_string());
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            if stem == "index" || index.entries.iter().any(|e| e.name == stem) {
+                continue;
             }
+            files.push(stem.to_string());
         }
     }
-    names.sort();
-    Ok(names)
+    files.sort();
+
+    let mut used: Vec<(String, u8)> = index
+        .entries
+        .iter()
+        .map(|e| (e.bank.clone(), e.slot))
+        .collect();
+    let mut cursor = 0usize;
+    for name in files {
+        let mut assigned: Option<(String, u8)> = None;
+        while cursor < 8 {
+            let bank = if cursor < 4 { "A" } else { "B" };
+            let slot = (cursor % 4 + 1) as u8;
+            cursor += 1;
+            if !used.contains(&(bank.to_string(), slot)) {
+                assigned = Some((bank.to_string(), slot));
+                break;
+            }
+        }
+        // More than 8 presets: keep them in the library with an out-of-grid slot.
+        let (bank, slot) = assigned.unwrap_or_else(|| ("A".to_string(), 100 + used.len() as u8));
+        used.push((bank.clone(), slot));
+        index.entries.push(PresetIndexEntry { name, bank, slot });
+    }
+    save_index(app, &index)?;
+    Ok(index)
 }
 
-#[tauri::command]
-pub fn save_preset(app: AppHandle, name: String, content: String) -> Result<(), String> {
-    let safe = sanitize_preset_name(&name);
+fn preset_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    let safe = sanitize_preset_name(name);
     if safe.is_empty() {
         return Err("Preset name is empty".into());
     }
-    let dir = presets_dir(&app)?;
-    let path = dir.join(format!("{}.json", safe));
-    std::fs::write(&path, content).map_err(|e| format!("Could not write preset: {}", e))?;
-    Ok(())
+    Ok(presets_dir(app)?.join(format!("{}.json", safe)))
+}
+
+fn parse_preset_json(raw: &str, name: &str) -> Result<PresetPayload, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|e| format!("Could not parse preset '{}': {}", name, e))?;
+
+    if value.get("rig").is_some() {
+        return serde_json::from_value(value).map_err(|e| e.to_string());
+    }
+
+    // Legacy flat blob: keep the knob values, drop the obsolete built-in model index.
+    let legacy: LegacyPreset = serde_json::from_value(value).map_err(|e| e.to_string())?;
+    Ok(PresetPayload {
+        schema_version: 1,
+        name: sanitize_preset_name(name),
+        bank: "A".into(),
+        slot: 0,
+        updated_at: 0,
+        rig: RigSnapshot {
+            input_volume: legacy.input_volume,
+            gate: legacy.gate,
+            bass: legacy.bass,
+            middle: legacy.middle,
+            treble: legacy.treble,
+            output_volume: legacy.output_volume,
+            model: None,
+            ir: None,
+        },
+    })
+}
+
+fn read_preset(app: &AppHandle, name: &str) -> Result<PresetPayload, String> {
+    let raw = std::fs::read_to_string(preset_path(app, name)?)
+        .map_err(|e| format!("Could not read preset '{}': {}", name, e))?;
+    parse_preset_json(&raw, name)
+}
+
+fn write_preset(app: &AppHandle, preset: &PresetPayload) -> Result<(), String> {
+    let safe = sanitize_preset_name(&preset.name);
+    if safe.is_empty() {
+        return Err("Preset name is empty".into());
+    }
+    if !matches!(preset.bank.as_str(), "A" | "B") {
+        return Err(format!("Unknown bank '{}'", preset.bank));
+    }
+    if !(1..=4).contains(&preset.slot) {
+        return Err("Slot must be between 1 and 4".into());
+    }
+
+    let mut index = sync_index(app)?;
+    if let Some(other) = index
+        .entries
+        .iter()
+        .find(|e| e.bank == preset.bank && e.slot == preset.slot && e.name != safe)
+    {
+        return Err(format!("Slot {}{} holds '{}'", preset.bank, preset.slot, other.name));
+    }
+    if let Some(entry) = index.entries.iter_mut().find(|e| e.name == safe) {
+        entry.bank = preset.bank.clone();
+        entry.slot = preset.slot;
+    } else {
+        index.entries.push(PresetIndexEntry {
+            name: safe.clone(),
+            bank: preset.bank.clone(),
+            slot: preset.slot,
+        });
+    }
+    save_index(app, &index)?;
+
+    let mut stored = preset.clone();
+    stored.name = safe.clone();
+    stored.schema_version = 1;
+    stored.updated_at = now_millis();
+    let raw = serde_json::to_string_pretty(&stored).map_err(|e| e.to_string())?;
+    std::fs::write(preset_path(app, &safe)?, raw).map_err(|e| format!("Could not write preset: {}", e))
+}
+
+fn meta_for(app: &AppHandle, entry: &PresetIndexEntry) -> Option<PresetMeta> {
+    let preset = read_preset(app, &entry.name).ok()?;
+    Some(PresetMeta {
+        name: preset.name,
+        bank: entry.bank.clone(),
+        slot: entry.slot,
+        model_name: preset.rig.model.map(|a| a.name),
+        ir_name: preset.rig.ir.map(|a| a.name),
+        updated_at: preset.updated_at,
+    })
 }
 
 #[tauri::command]
-pub fn load_preset(app: AppHandle, name: String) -> Result<String, String> {
-    let safe = sanitize_preset_name(&name);
-    let dir = presets_dir(&app)?;
-    let path = dir.join(format!("{}.json", safe));
-    std::fs::read_to_string(&path).map_err(|e| format!("Could not read preset: {}", e))
+pub fn list_presets(app: AppHandle) -> Result<Vec<PresetMeta>, String> {
+    let index = sync_index(&app)?;
+    Ok(index.entries.iter().filter_map(|e| meta_for(&app, e)).collect())
+}
+
+#[tauri::command]
+pub fn save_preset(app: AppHandle, preset: PresetPayload) -> Result<(), String> {
+    write_preset(&app, &preset)
+}
+
+#[tauri::command]
+pub fn load_preset(
+    app: AppHandle,
+    engine: State<'_, StdMutex<AudioEngine>>,
+    name: String,
+) -> Result<PresetPayload, String> {
+    let preset = read_preset(&app, &name)?;
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+
+    match &preset.rig.model {
+        Some(asset) => {
+            let path = resolve_asset_path(&app, &asset.id)?;
+            let bytes = std::fs::read(&path).map_err(|e| format!("Could not read preset NAM: {}", e))?;
+            engine.load_nam_from_bytes(&asset.name, bytes)?;
+        }
+        None => engine.clear_nam(),
+    }
+    match &preset.rig.ir {
+        Some(asset) => {
+            let path = resolve_asset_path(&app, &asset.id)?;
+            engine.load_ir(&path.to_string_lossy())?;
+        }
+        None => engine.clear_ir(),
+    }
+
+    Ok(preset)
 }
 
 #[tauri::command]
 pub fn delete_preset(app: AppHandle, name: String) -> Result<(), String> {
-    let safe = sanitize_preset_name(&name);
-    let dir = presets_dir(&app)?;
-    let path = dir.join(format!("{}.json", safe));
+    let path = preset_path(&app, &name)?;
     if path.exists() {
         std::fs::remove_file(&path).map_err(|e| format!("Could not delete preset: {}", e))?;
     }
-    Ok(())
+    let mut index = load_index(&app)?;
+    let safe = sanitize_preset_name(&name);
+    index.entries.retain(|e| e.name != safe);
+    save_index(&app, &index)
+}
+
+#[tauri::command]
+pub fn rename_preset(app: AppHandle, name: String, new_name: String) -> Result<(), String> {
+    let safe_old = sanitize_preset_name(&name);
+    let safe_new = sanitize_preset_name(&new_name);
+    if safe_new.is_empty() {
+        return Err("Preset name is empty".into());
+    }
+    if safe_old == safe_new {
+        return Ok(());
+    }
+    let from = preset_path(&app, &safe_old)?;
+    let to = preset_path(&app, &safe_new)?;
+    if to.exists() {
+        return Err(format!("A preset named '{}' already exists", safe_new));
+    }
+    std::fs::rename(&from, &to).map_err(|e| format!("Could not rename preset: {}", e))?;
+
+    let mut preset = read_preset(&app, &safe_new)?;
+    preset.name = safe_new.clone();
+    let raw = serde_json::to_string_pretty(&preset).map_err(|e| e.to_string())?;
+    std::fs::write(&to, raw).map_err(|e| format!("Could not write preset: {}", e))?;
+
+    let mut index = load_index(&app)?;
+    if let Some(entry) = index.entries.iter_mut().find(|e| e.name == safe_old) {
+        entry.name = safe_new;
+    }
+    save_index(&app, &index)
+}
+
+#[tauri::command]
+pub fn export_preset(app: AppHandle, name: String) -> Result<String, String> {
+    let preset = read_preset(&app, &name)?;
+    serde_json::to_string_pretty(&preset).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn export_preset_to_path(app: AppHandle, name: String, path: String) -> Result<(), String> {
+    let preset = read_preset(&app, &name)?;
+    let raw = serde_json::to_string_pretty(&preset).map_err(|e| e.to_string())?;
+    std::fs::write(&path, raw).map_err(|e| format!("Could not export preset: {}", e))
+}
+
+#[tauri::command]
+pub fn import_preset(app: AppHandle, json: String) -> Result<PresetMeta, String> {
+    let mut preset: PresetPayload =
+        serde_json::from_str(&json).map_err(|e| format!("Invalid preset file: {}", e))?;
+    preset.schema_version = 1;
+    if preset.bank.is_empty() {
+        preset.bank = "A".into();
+    }
+    if preset.slot == 0 {
+        preset.slot = 1;
+    }
+    let name = sanitize_preset_name(&preset.name);
+    if name.is_empty() {
+        return Err("Preset file has no name".into());
+    }
+    if preset_path(&app, &name)?.exists() {
+        return Err(format!("A preset named '{}' already exists", name));
+    }
+    write_preset(&app, &preset)?;
+    let index = load_index(&app)?;
+    index
+        .entries
+        .iter()
+        .find(|e| e.name == name)
+        .and_then(|e| meta_for(&app, e))
+        .ok_or_else(|| "Could not index imported preset".into())
+}
+
+#[tauri::command]
+pub fn import_preset_from_path(app: AppHandle, path: String) -> Result<PresetMeta, String> {
+    let json = std::fs::read_to_string(&path).map_err(|e| format!("Could not read preset file: {}", e))?;
+    import_preset(app, json)
+}
+
+// ---------------------------------------------------------------------------
+// Local asset library. Files are stored under <library>/<kind>/<hash>/<name>
+// so a path's file name is the display name the DSP already reports.
+// ---------------------------------------------------------------------------
+
+fn library_dir(app: &AppHandle, kind: &str) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Could not resolve app data dir: {}", e))?
+        .join("library")
+        .join(kind);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create library dir: {}", e))?;
+    Ok(dir)
+}
+
+fn library_file_name(filename: &str, kind: &str) -> String {
+    let ext = if kind == "nam" { "nam" } else { "wav" };
+    let stem = Path::new(filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(filename);
+    let safe: String = stem
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-' || *c == ' ')
+        .collect::<String>()
+        .trim()
+        .to_string();
+    format!("{}.{}", if safe.is_empty() { "imported" } else { &safe }, ext)
+}
+
+fn resolve_asset_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
+    let relative = Path::new(id);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir | std::path::Component::CurDir))
+    {
+        return Err(format!("Invalid asset id '{}'", id));
+    }
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Could not resolve app data dir: {}", e))?
+        .join("library");
+    let path = root.join(relative);
+    if !path.exists() {
+        return Err(format!("Missing preset asset '{}'", id));
+    }
+    Ok(path)
+}
+
+fn store_asset(app: &AppHandle, kind: &str, filename: &str, bytes: &[u8]) -> Result<AssetRef, String> {
+    use sha2::{Digest, Sha256};
+    let hash = hex_encode(&Sha256::digest(bytes)[..6]);
+    let name = library_file_name(filename, kind);
+    let dir = library_dir(app, kind)?.join(&hash);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not create asset dir: {}", e))?;
+    let path = dir.join(&name);
+    if !path.exists() {
+        std::fs::write(&path, bytes).map_err(|e| format!("Could not store asset: {}", e))?;
+    }
+    Ok(AssetRef {
+        id: format!("{}/{}/{}", kind, hash, name),
+        name,
+    })
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
+}
+
+/// Store a copy of a dropped NAM/IR in the library and load it into the engine.
+#[tauri::command]
+pub fn import_asset(
+    app: AppHandle,
+    engine: State<'_, StdMutex<AudioEngine>>,
+    kind: String,
+    filename: String,
+    path: Option<String>,
+    data: Option<String>,
+) -> Result<AssetRef, String> {
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use base64::Engine;
+
+    if kind != "nam" && kind != "ir" {
+        return Err(format!("Unsupported asset kind '{}'", kind));
+    }
+    let bytes = if let Some(path) = path {
+        std::fs::read(&path).map_err(|e| format!("Could not read '{}': {}", path, e))?
+    } else if let Some(data) = data {
+        BASE64.decode(&data).map_err(|e| format!("Invalid base64 data: {}", e))?
+    } else {
+        return Err("No file path or data supplied".into());
+    };
+
+    let asset = store_asset(&app, &kind, &filename, &bytes)?;
+    let stored = resolve_asset_path(&app, &asset.id)?;
+    let stored = stored.to_string_lossy().to_string();
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    if kind == "nam" {
+        engine.load_nam_from_bytes(&asset.name, bytes)?;
+    } else {
+        engine.load_ir(&stored)?;
+    }
+    Ok(asset)
 }
 
 #[tauri::command]
@@ -483,4 +968,62 @@ pub fn save_ir_file(
 #[tauri::command]
 pub fn log_to_terminal(msg: String) {
     eprintln!("[JS] {}", msg);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preset_round_trip() {
+        let preset = PresetPayload {
+            schema_version: 1,
+            name: "Crunch".into(),
+            bank: "A".into(),
+            slot: 2,
+            updated_at: 42,
+            rig: RigSnapshot {
+                input_volume: 6.0,
+                gate: 3.0,
+                bass: 4.0,
+                middle: 7.0,
+                treble: 8.0,
+                output_volume: 5.5,
+                model: Some(AssetRef { id: "nams/abc/JCM800.nam".into(), name: "JCM800.nam".into() }),
+                ir: Some(AssetRef { id: "irs/def/Cab.wav".into(), name: "Cab.wav".into() }),
+            },
+        };
+        let raw = serde_json::to_string(&preset).unwrap();
+        let parsed = parse_preset_json(&raw, "Crunch").unwrap();
+        assert_eq!(parsed.name, "Crunch");
+        assert_eq!(parsed.slot, 2);
+        assert_eq!(parsed.rig.middle, 7.0);
+        assert_eq!(parsed.rig.model.unwrap().name, "JCM800.nam");
+        assert_eq!(parsed.rig.ir.unwrap().name, "Cab.wav");
+    }
+
+    #[test]
+    fn legacy_blob_migrates_knobs_and_clears_assets() {
+        let legacy = r#"{"modelIndex":3,"inputVolume":7,"gate":2,"bass":9,"middle":4,"treble":6,"outputVolume":8,"bufferSize":256}"#;
+        let parsed = parse_preset_json(legacy, "Old").unwrap();
+        assert_eq!(parsed.rig.input_volume, 7.0);
+        assert_eq!(parsed.rig.bass, 9.0);
+        assert!(parsed.rig.model.is_none());
+        assert!(parsed.rig.ir.is_none());
+    }
+
+    #[test]
+    fn missing_fields_use_defaults() {
+        let parsed = parse_preset_json(r#"{"name":"Minimal","bank":"B","slot":1}"#, "Minimal").unwrap();
+        assert_eq!(parsed.rig.input_volume, 5.0);
+        assert_eq!(parsed.rig.output_volume, 5.0);
+        assert!(parsed.rig.model.is_none());
+    }
+
+    #[test]
+    fn asset_names_are_sanitised() {
+        assert_eq!(library_file_name("My Amp!.nam", "nam"), "My Amp.nam");
+        assert_eq!(library_file_name("../../evil.wav", "ir"), "evil.wav");
+        assert_eq!(hex_encode(&[0xab, 0x0c]), "ab0c");
+    }
 }

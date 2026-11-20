@@ -806,6 +806,12 @@ impl AudioEngine {
         self.model_manager.lock().current_model_name()
     }
 
+    /// Return to bypass mode (used when recalling a preset without a NAM).
+    pub fn clear_nam(&self) {
+        self.model_manager.lock().clear_current();
+        log::info!("NAM model cleared (bypass)");
+    }
+
     /// Load a NAM model from raw bytes (drag-and-drop).
     pub fn load_nam_from_bytes(&self, filename: &str, bytes: Vec<u8>) -> Result<String, String> {
         let sample_rate = self.state.lock().sample_rate;
