@@ -1,3 +1,22 @@
+# NAMpli
+
+NAMpli is a Tauri desktop app for playing NAM guitar amp captures with a cabinet IR.
+
+## Preset manager
+
+The main panel has a DSP-style preset board with two banks (A/B) and four slots each:
+
+- **Click a slot** to recall its knobs, NAM model and IR.
+- **Right-click a slot** for Save here, Save As…, Rename… and Delete.
+- **Save** writes the current knob state, NAM and IR to the selected slot. A gold dot marks unsaved changes.
+- **A/B** compares the current slot with the matching slot in the other bank.
+- **Library** opens the preset library, where presets can be recalled, renamed, deleted, exported and imported as JSON.
+
+Dropped `.nam` and `.wav` files are copied into a local asset library under the app's data directory,
+so presets keep their model and cabinet after a restart. The app still starts in bypass mode; recall a
+preset (or drop a file) to load a model. Noise gate section, cabinet mix, buffer size and audio device
+settings are global and are not stored in presets.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
