@@ -1,43 +1,26 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import {
   listAudioDevices as tauriListDevices,
   listAudioHosts as tauriListAudioHosts,
-  listNamModels as tauriListNamModels,
   setAudioDevices as tauriSetAudioDevices,
   setAudioHost as tauriSetAudioHost,
   setBufferSize as tauriSetBufferSize,
-  setNamModel as tauriSetNamModel,
   getAudioStatus as tauriGetAudioStatus,
   setNoiseGate as tauriSetNoiseGate,
   loadIr as tauriLoadIr,
   clearIr as tauriClearIr,
   setIrMix as tauriSetIrMix,
-  listPresets as tauriListPresets,
-  savePreset as tauriSavePreset,
-  loadPreset as tauriLoadPreset,
-  deletePreset as tauriDeletePreset,
-  loadNamByPath as tauriLoadNamByPath,
-  logToTerminal,
 } from '../tauri';
 import type { AudioDeviceInfo } from '../tauri';
 import { notifyError } from '../notifications';
 import './SettingsPanel.css';
 
 import type { AmpSettings } from '../types/amp';
-import type { PresetSlotInfo } from '../types/preset';
-import { setPresetBarActions } from '../presets/presetBarStore';
-
-/** Log to both the browser console and the backend OS terminal. */
-function log(msg: string) {
-  console.log(msg);
-  void logToTerminal(msg);
-}
 
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
-  onSaveUnnamed: () => void;
   settings: AmpSettings;
   onSetInputVolume: (v: number) => void;
   onSetGate: (v: number) => void;
@@ -65,16 +48,14 @@ const BUFFER_SIZE_OPTIONS = [
 export default function SettingsPanel({
   open: isOpen,
   onClose,
-  onSaveUnnamed,
-  settings,
-  onSetInputVolume,
-  onSetGate,
-  onSetBass,
-  onSetMiddle,
-  onSetTreble,
-  onSetOutputVolume,
+  settings: _settings,
+  onSetInputVolume: _onSetInputVolume,
+  onSetGate: _onSetGate,
+  onSetBass: _onSetBass,
+  onSetMiddle: _onSetMiddle,
+  onSetTreble: _onSetTreble,
+  onSetOutputVolume: _onSetOutputVolume,
 }: SettingsPanelProps) {
-  const [selectedNamModel, setSelectedNamModel] = useState<number>(0);
   const [hosts, setHosts] = useState<string[]>([]);
   const [selectedHost, setSelectedHost] = useState<string>('');
   const [inputDevices, setInputDevices] = useState<AudioDeviceInfo[]>([]);
@@ -83,85 +64,12 @@ export default function SettingsPanel({
   const [selectedOutput, setSelectedOutput] = useState<string>('');
   const [bufferSize, setBufferSize] = useState<number>(256);
 
-  const [namModels, setNamModels] = useState<string[]>([]);
-  const [presets, setPresets] = useState<string[]>([]);
-  const [selectedPreset, setSelectedPreset] = useState<string>('');
-  const [presetName, setPresetName] = useState<string>('');
-
   const [irName, setIrName] = useState<string | null>(null);
-  const [irPath, setIrPath] = useState<string | null>(null);
   const [irMix, setIrMix] = useState<number>(100);
 
   const [gateEnabled, setGateEnabled] = useState<boolean>(false);
   const [gateThreshold, setGateThreshold] = useState<number>(-60);
   const [gateDecay, setGateDecay] = useState<number>(120);
-
-  // Unnamed mode state
-  const [isUnnamed, setIsUnnamed] = useState<boolean>(false);
-  const [unnamedModelName, setUnnamedModelName] = useState<string | null>(null);
-  const [unnamedIrName, setUnnamedIrName] = useState<string | null>(null);
-  const [unnamedNamPath, setUnnamedNamPath] = useState<string | null>(null);
-  const [unnamedIrPath, setUnnamedIrPath] = useState<string | null>(null);
-
-  // Placeholder refs — initialized after the handler functions are defined below.
-  const handleLoadUnnamedNamRef = useRef<((path: string) => Promise<void>) | null>(null);
-  const handleLoadUnnamedIrRef = useRef<((path: string) => Promise<void>) | null>(null);
-
-  // Listen for custom events from App.tsx when files are dropped
-  useEffect(() => {
-    log('>>> UNNAMED MODE: SettingsPanel registering event listeners');
-    const handleNamEvent = (e: Event) => {
-      const path = (e as CustomEvent).detail as string;
-      log('>>> UNNAMED MODE: received load-unnamed-nam event, path=', path);
-      if (handleLoadUnnamedNamRef.current) {
-        void handleLoadUnnamedNamRef.current(path);
-      }
-    };
-    const handleIrEvent = (e: Event) => {
-      const path = (e as CustomEvent).detail as string;
-      log('>>> UNNAMED MODE: received load-unnamed-ir event, path=', path);
-      if (handleLoadUnnamedIrRef.current) {
-        void handleLoadUnnamedIrRef.current(path);
-      }
-    };
-    window.addEventListener('load-unnamed-nam', handleNamEvent);
-    window.addEventListener('load-unnamed-ir', handleIrEvent);
-    return () => {
-      log('>>> UNNAMED MODE: SettingsPanel cleaning up event listeners');
-      window.removeEventListener('load-unnamed-nam', handleNamEvent);
-      window.removeEventListener('load-unnamed-ir', handleIrEvent);
-    };
-  }, []);
-
-  // Build slot info from presets list
-  const slots: PresetSlotInfo[] = presets.map((name) => ({
-    slot: name,
-    name,
-    modelName: null,
-    irName: null,
-  }));
-
-  // Update preset bar store
-  useEffect(() => {
-    log('>>> UNNAMED MODE: setPresetBarActions — isUnnamed=', isUnnamed, ', unnamedModelName=', unnamedModelName);
-    setPresetBarActions({
-      slots,
-      currentSlot: isUnnamed ? null : (selectedPreset || null),
-      isDirty: false,
-      modelName: isUnnamed ? unnamedModelName : null,
-      irName: isUnnamed ? unnamedIrName : (irName || null),
-      loadSlot: (slot: string) => {
-        void handleLoadSlot(slot);
-      },
-      isUnnamed,
-      unnamedModelName,
-      unnamedIrName,
-      saveUnnamed: () => {
-        void handleSaveUnnamed();
-      },
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slots, selectedPreset, isUnnamed, unnamedModelName, unnamedIrName, irName]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -177,21 +85,8 @@ export default function SettingsPanel({
         const host = selectedHost || availableHosts[0] || '';
         if (!selectedHost && host) setSelectedHost(host);
 
-        const models = await tauriListNamModels();
-        if (cancelled) return;
-        setNamModels(models);
-
-        const presetList = await tauriListPresets();
-        if (cancelled) return;
-        setPresets(presetList);
-        if (presetList.length && !selectedPreset) setSelectedPreset(presetList[0]);
-
         try {
           const status = await tauriGetAudioStatus();
-          if (!cancelled && status.namModel) {
-            const idx = models.indexOf(status.namModel);
-            if (idx >= 0) setSelectedNamModel(idx);
-          }
           if (!cancelled && status.irName) setIrName(status.irName);
         } catch {
           // ignore
@@ -225,10 +120,6 @@ export default function SettingsPanel({
         const status = await tauriGetAudioStatus();
         if (cancelled) return;
         if (status.irName) setIrName(status.irName);
-        if (status.namModel && namModels.length) {
-          const idx = namModels.indexOf(status.namModel);
-          if (idx >= 0) setSelectedNamModel(idx);
-        }
       } catch {
         // Status is best-effort; the panel still works without it.
       }
@@ -258,92 +149,6 @@ export default function SettingsPanel({
 
   const handleSelectOutput = (deviceId: string) => {
     setSelectedOutput(deviceId);
-  };
-
-  const handleSavePreset = async () => {
-    const name = presetName.trim();
-    if (!name) {
-      notifyError('Enter a preset name first.');
-      return;
-    }
-    const content = JSON.stringify({
-      modelIndex: selectedNamModel,
-      inputVolume: settings.inputVolume,
-      gate: settings.gate,
-      bass: settings.bass,
-      middle: settings.middle,
-      treble: settings.treble,
-      outputVolume: settings.outputVolume,
-      bufferSize,
-    });
-    try {
-      await tauriSavePreset(name, content);
-      const list = await tauriListPresets();
-      setPresets(list);
-      setSelectedPreset(name);
-    } catch (err) {
-      console.error('Failed to save preset:', err);
-      notifyError(`Could not save preset: ${err}`);
-    }
-  };
-
-  const handleLoadSlot = async (slot: string) => {
-    try {
-      const raw = await tauriLoadPreset(slot);
-      const preset = JSON.parse(raw);
-      if (typeof preset.inputVolume === 'number') onSetInputVolume(preset.inputVolume);
-      if (typeof preset.gate === 'number') onSetGate(preset.gate);
-      if (typeof preset.bass === 'number') onSetBass(preset.bass);
-      if (typeof preset.middle === 'number') onSetMiddle(preset.middle);
-      if (typeof preset.treble === 'number') onSetTreble(preset.treble);
-      if (typeof preset.outputVolume === 'number') onSetOutputVolume(preset.outputVolume);
-      if (typeof preset.bufferSize === 'number') {
-        setBufferSize(preset.bufferSize);
-        tauriSetBufferSize(preset.bufferSize).catch(() => {});
-      }
-      if (typeof preset.modelIndex === 'number') {
-        setSelectedNamModel(preset.modelIndex);
-        tauriSetNamModel(preset.modelIndex).catch(() => {});
-      }
-      setSelectedPreset(slot);
-      // Clear unnamed state when loading a slot
-      setIsUnnamed(false);
-      setUnnamedModelName(null);
-      setUnnamedIrName(null);
-      setUnnamedNamPath(null);
-      setUnnamedIrPath(null);
-    } catch (err) {
-      console.error('Failed to load preset:', err);
-      notifyError(`Could not load preset: ${err}`);
-    }
-  };
-
-  const handleLoadPreset = async () => {
-    if (!selectedPreset) return;
-    await handleLoadSlot(selectedPreset);
-  };
-
-  const handleDeletePreset = async () => {
-    if (!selectedPreset) return;
-    try {
-      await tauriDeletePreset(selectedPreset);
-      const list = await tauriListPresets();
-      setPresets(list);
-      setSelectedPreset(list.length ? list[0] : '');
-    } catch (err) {
-      console.error('Failed to delete preset:', err);
-      notifyError(`Could not delete preset: ${err}`);
-    }
-  };
-
-  const handleSetNamModel = async (index: number) => {
-    setSelectedNamModel(index);
-    try {
-      await tauriSetNamModel(index);
-    } catch (err) {
-      console.error('Failed to set NAM model:', err);
-      notifyError(`Could not change NAM model: ${err}`);
-    }
   };
 
   const handleSelectHost = async (host: string) => {
@@ -391,86 +196,16 @@ export default function SettingsPanel({
       if (!selected || Array.isArray(selected)) return;
       const name = await tauriLoadIr(selected);
       setIrName(name);
-      setIrPath(selected);
     } catch (err) {
       console.error('Failed to load cabinet IR:', err);
       notifyError(`Could not load that impulse response: ${err}`);
     }
   };
 
-  // --- Unnamed mode handlers ---
-
-  const handleLoadUnnamedNam = async (path: string) => {
-    try {
-      log('>>> UNNAMED MODE: handleLoadUnnamedNam START, path=', path);
-      const fileName = path.split('/').pop() ?? path.split('\\').pop() ?? path;
-      const modelName = fileName.replace(/\.nam$/i, '');
-      log('>>> UNNAMED MODE: extracted modelName=', modelName);
-      // Set unnamed state first, before loading into audio engine (which may fail)
-      setUnnamedModelName(modelName);
-      setUnnamedNamPath(path);
-      setUnnamedIrName(unnamedIrName);
-      setUnnamedIrPath(unnamedIrPath);
-      setIsUnnamed(true);
-      setSelectedPreset('');
-      setIrName(unnamedIrName);
-      setIrPath(unnamedIrPath);
-      log('>>> UNNAMED MODE ACTIVATED: isUnnamed=true, modelName=', modelName);
-      // Load into audio engine (best-effort)
-      try {
-        const loadedName = await tauriLoadNamByPath(path);
-        log('>>> UNNAMED MODE: NAM loaded into audio engine as', loadedName);
-      } catch (loadErr) {
-        log('>>> UNNAMED MODE: tauriLoadNamByPath failed (audio engine may not be running):', loadErr);
-      }
-      log('>>> UNNAMED MODE: handleLoadUnnamedNam completed');
-    } catch (err) {
-      console.error('>>> UNNAMED MODE: handleLoadUnnamedNam FAILED', err);
-      notifyError(`Could not load NAM file: ${err}`);
-    }
-  };
-
-  const handleLoadUnnamedIr = async (path: string) => {
-    try {
-      log('>>> UNNAMED MODE: handleLoadUnnamedIr START, path=', path);
-      const fileName = path.split('/').pop() ?? path.split('\\').pop() ?? path;
-      const irNameFromFile = fileName.replace(/\.wav$/i, '');
-      setUnnamedIrName(irNameFromFile);
-      setUnnamedIrPath(path);
-      setIrName(irNameFromFile);
-      setIrPath(path);
-      setIsUnnamed(true);
-      setSelectedPreset('');
-      log('>>> UNNAMED MODE ACTIVATED: isUnnamed=true, irName=', irNameFromFile);
-      try {
-        const irNameLoaded = await tauriLoadIr(path);
-        log('>>> UNNAMED MODE: IR loaded into audio engine as', irNameLoaded);
-        setUnnamedIrName(irNameLoaded);
-        setIrName(irNameLoaded);
-      } catch (loadErr) {
-        log('>>> UNNAMED MODE: tauriLoadIr failed (audio engine may not be running):', loadErr);
-      }
-      log('>>> UNNAMED MODE: handleLoadUnnamedIr completed');
-    } catch (err) {
-      console.error('>>> UNNAMED MODE: handleLoadUnnamedIr FAILED', err);
-      notifyError(`Could not load IR file: ${err}`);
-    }
-  };
-
-  const handleSaveUnnamed = () => {
-    log('>>> UNNAMED MODE: handleSaveUnnamed — opening preset library');
-    onSaveUnnamed();
-  };
-
-  // Initialize refs so event listeners always call the latest handler version.
-  handleLoadUnnamedNamRef.current = handleLoadUnnamedNam;
-  handleLoadUnnamedIrRef.current = handleLoadUnnamedIr;
-
   const handleClearIr = async () => {
     try {
       await tauriClearIr();
       setIrName(null);
-      setIrPath(null);
     } catch (err) {
       console.error('Failed to clear cabinet IR:', err);
       notifyError('Could not remove the cabinet IR.');
@@ -526,83 +261,6 @@ export default function SettingsPanel({
           <button className="settings-close" onClick={onClose} aria-label="Close settings">
             &times;
           </button>
-        </div>
-
-        <div className="settings-section">
-          <h3>Presets</h3>
-
-          <div className="setting-row">
-            <label className="setting-label">Preset</label>
-            <select
-              className="setting-select"
-              value={selectedPreset}
-              onChange={(e) => setSelectedPreset(e.target.value)}
-            >
-              {presets.length === 0 ? (
-                <option value="">No presets saved</option>
-              ) : (
-                presets.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))
-              )}
-            </select>
-            <span className="setting-value">{selectedPreset || '—'}</span>
-          </div>
-
-          <div className="setting-row">
-            <label className="setting-label">Name</label>
-            <input
-              className="setting-select"
-              type="text"
-              value={presetName}
-              onChange={(e) => setPresetName(e.target.value)}
-              placeholder="New preset name"
-            />
-          </div>
-
-          <div className="setting-row setting-inline">
-            <button className="setting-button" onClick={handleSavePreset}>
-              Save
-            </button>
-            <button className="setting-button" onClick={handleLoadPreset} disabled={!selectedPreset}>
-              Load
-            </button>
-            <button
-              className="setting-button setting-button-secondary"
-              onClick={handleDeletePreset}
-              disabled={!selectedPreset}
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-
-        <div className="settings-section">
-          <h3>Model</h3>
-
-          <div className="setting-row">
-            <label className="setting-label">NAM Model</label>
-            <select
-              className="setting-select"
-              value={selectedNamModel}
-              onChange={(e) => handleSetNamModel(Number(e.target.value))}
-            >
-              {namModels.length === 0 ? (
-                <option value={0}>No models found</option>
-              ) : (
-                namModels.map((name, index) => (
-                  <option key={name} value={index}>
-                    {name.replace('.nam', '')}
-                  </option>
-                ))
-              )}
-            </select>
-            <span className="setting-value">
-              {namModels[selectedNamModel] || ''}
-            </span>
-          </div>
         </div>
 
         <div className="settings-section">

@@ -2,102 +2,112 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 38px;
-  background: linear-gradient(180deg, #3a3a3a 0%, #2d2d2d 30%, #252525 70%, #1e1e1e 100%);
-  color: #d4af37;
-  font-size: 13px;
+  height: 32px;
+  background: #0a0a0a;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.12);
+  color: #666;
+  font-size: 12px;
   font-family: system-ui, -apple-system, sans-serif;
-  -webkit-app-region: drag;
   user-select: none;
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 1000;
-  border-bottom: 1px solid #0a0a0a;
-  box-shadow: 
-    0 1px 0 rgba(255, 255, 255, 0.08),
-    0 2px 8px rgba(0, 0, 0, 0.5);
-}
-
-/* Metallic highlight line at the very top */
-.titlebar::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.15) 20%, rgba(255, 255, 255, 0.25) 50%, rgba(255, 255, 255, 0.15) 80%, transparent 100%);
-}
-
-/* Gold accent line below the title bar */
-.titlebar::after {
-  content: '';
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent 0%, #d4af37 10%, #f0d060 50%, #d4af37 90%, transparent 100%);
-  box-shadow: 0 0 10px rgba(212, 175, 55, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
 .titlebar-drag-region {
-  display: flex;
-  align-items: center;
   flex: 1;
   height: 100%;
-  padding-left: 16px;
-}
-
-.titlebar-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 800;
-  letter-spacing: 0.25em;
-  text-transform: uppercase;
-  text-shadow: 
-    0 0 10px rgba(212, 175, 55, 0.4),
-    0 1px 3px rgba(0, 0, 0, 0.8);
-  color: #f0d060;
 }
 
 .titlebar-controls {
   display: flex;
   align-items: center;
+  gap: 2px;
   height: 100%;
-  -webkit-app-region: no-drag;
+  padding: 0 6px;
 }
 
 .titlebar-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 100%;
+  width: 32px;
+  height: 28px;
+  padding: 0;
   background: transparent;
-  border: none;
-  color: #d4af37;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: rgba(212, 175, 55, 0.55);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
 }
 
 .titlebar-button:hover {
-  background: rgba(212, 175, 55, 0.2);
   color: #f0d060;
+  background: rgba(212, 175, 55, 0.12);
+  border-color: rgba(212, 175, 55, 0.35);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.18);
 }
 
 .titlebar-button:active {
-  background: rgba(212, 175, 55, 0.3);
+  background: rgba(212, 175, 55, 0.2);
+  transform: translateY(1px);
 }
 
+.titlebar-button:focus-visible {
+  outline: 1px solid rgba(212, 175, 55, 0.9);
+  outline-offset: -2px;
+}
+
+/* Muted brick red keeps "danger" legible without the Windows-style red block. */
 .titlebar-close:hover {
-  background: #c0392b;
   color: #fff;
+  background: rgba(176, 48, 40, 0.9);
+  border-color: rgba(220, 90, 80, 0.8);
+  box-shadow: 0 0 8px rgba(176, 48, 40, 0.35);
 }
 
 .titlebar-close:active {
-  background: #a93226;
+  background: rgba(150, 38, 32, 0.95);
+}
+
+/* Decorative wordmark: absolutely centred, never intercepts drag clicks. */
+.titlebar-brand {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-indent: 0.35em;
+  text-transform: uppercase;
+  color: rgba(212, 175, 55, 0.45);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Desktops like Ubuntu GNOME (and macOS) put the controls on the left.
+   The component renders them first in that case; the order keeps flexbox
+   from repositioning them if the markup changes. */
+.titlebar--controls-left .titlebar-controls {
+  order: -1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .titlebar-button {
+    transition: none;
+  }
+
+  .titlebar-button:active {
+    transform: none;
+  }
 }
