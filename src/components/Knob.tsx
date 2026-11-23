@@ -7,6 +7,8 @@ interface KnobProps {
   onChange: (value: number) => void;
   disabled?: boolean;
   description?: string;
+  /** Short always-visible caption. The full description stays in the tooltip. */
+  hint?: string;
 }
 
 const MIN_ANGLE = -135;
@@ -18,7 +20,17 @@ const KNOB_SIZE = 100;
 const TICK_RADIUS = 40;
 const TICK_BOX = 16;
 
-export default function Knob({ label, value, onChange, disabled = false, description }: KnobProps) {
+const clampValue = (value: number) =>
+  Math.round(Math.max(MIN_VALUE, Math.min(MAX_VALUE, value)));
+
+export default function Knob({
+  label,
+  value,
+  onChange,
+  disabled = false,
+  description,
+  hint,
+}: KnobProps) {
   const [isDragging, setIsDragging] = useState(false);
   const startYRef = useRef(0);
   const startValueRef = useRef(0);
@@ -39,7 +51,7 @@ export default function Knob({ label, value, onChange, disabled = false, descrip
     if (angleDeg < MIN_ANGLE) angleDeg = MIN_ANGLE;
     if (angleDeg > MAX_ANGLE) angleDeg = MAX_ANGLE;
     const ratio = (angleDeg - MIN_ANGLE) / (MAX_ANGLE - MIN_ANGLE);
-    return Math.round(Math.max(MIN_VALUE, Math.min(MAX_VALUE, ratio * (MAX_VALUE - MIN_VALUE))));
+    return clampValue(ratio * (MAX_VALUE - MIN_VALUE));
   }, [value]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -68,7 +80,7 @@ export default function Knob({ label, value, onChange, disabled = false, descrip
     const deltaY = startYRef.current - e.clientY;
     const sensitivity = 0.02;
     let newValue = startValueRef.current + deltaY * sensitivity;
-    newValue = Math.round(Math.max(MIN_VALUE, Math.min(MAX_VALUE, newValue)));
+    newValue = clampValue(newValue);
     if (newValue !== startValueRef.current) {
       startValueRef.current = newValue;
       onChange(newValue);
@@ -80,7 +92,7 @@ export default function Knob({ label, value, onChange, disabled = false, descrip
     const deltaY = startYRef.current - e.touches[0].clientY;
     const sensitivity = 0.02;
     let newValue = startValueRef.current + deltaY * sensitivity;
-    newValue = Math.round(Math.max(MIN_VALUE, Math.min(MAX_VALUE, newValue)));
+    newValue = clampValue(newValue);
     if (newValue !== startValueRef.current) {
       startValueRef.current = newValue;
       onChange(newValue);
@@ -90,6 +102,36 @@ export default function Knob({ label, value, onChange, disabled = false, descrip
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
   }, []);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    let next: number;
+    switch (e.key) {
+      case 'ArrowUp':
+      case 'ArrowRight':
+        next = value + 1;
+        break;
+      case 'ArrowDown':
+      case 'ArrowLeft':
+        next = value - 1;
+        break;
+      case 'PageUp':
+        next = value + 2;
+        break;
+      case 'PageDown':
+        next = value - 2;
+        break;
+      case 'Home':
+        next = MIN_VALUE;
+        break;
+      case 'End':
+        next = MAX_VALUE;
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
+    onChange(clampValue(next));
+  }, [value, onChange]);
 
   useEffect(() => {
     document.addEventListener('mousemove', handleMouseMove);
@@ -111,19 +153,19 @@ export default function Knob({ label, value, onChange, disabled = false, descrip
     >
       <div className="knob-wrapper">
         <div className="knob-scale">
-          {Array.from({ length: 11 }, (_, i) => {
+          {Array.from({ length: MAX_VALUE - MIN_VALUE + 1 }, (_, i) => {
+            const tickValue = MIN_VALUE + i;
             const tickAngle = MIN_ANGLE + (i / (MAX_VALUE - MIN_VALUE)) * (MAX_ANGLE - MIN_ANGLE);
             const angleRad = (tickAngle * Math.PI) / 180;
-            const radius = TICK_RADIUS;
-            const x = KNOB_SIZE / 2 + radius * Math.sin(angleRad);
-            const y = KNOB_SIZE / 2 - radius * Math.cos(angleRad);
+            const x = KNOB_SIZE / 2 + TICK_RADIUS * Math.sin(angleRad);
+            const y = KNOB_SIZE / 2 - TICK_RADIUS * Math.cos(angleRad);
             return (
               <span
-                key={i}
-                className={`knob-scale-tick ${i === value ? 'active' : ''}`}
+                key={tickValue}
+                className={`knob-scale-tick ${tickValue === value ? 'active' : ''}`}
                 style={{ left: `${x - TICK_BOX / 2}px`, top: `${y - TICK_BOX / 2}px` }}
               >
-                {i}
+                {tickValue}
               </span>
             );
           })}
@@ -133,11 +175,13 @@ export default function Knob({ label, value, onChange, disabled = false, descrip
           className="knob-body"
           onMouseDown={handleMouseDown}
           onTouchStart={handleTouchStart}
+          onKeyDown={handleKeyDown}
           role="slider"
           aria-label={label}
           aria-valuemin={MIN_VALUE}
           aria-valuemax={MAX_VALUE}
           aria-valuenow={value}
+          aria-valuetext={`${label} ${value}`}
           tabIndex={disabled ? -1 : 0}
         >
           <div
@@ -150,7 +194,7 @@ export default function Knob({ label, value, onChange, disabled = false, descrip
         <span className="knob-label">{label}</span>
         <span className="knob-value">{value}</span>
       </div>
-      {description && <div className="knob-description">{description}</div>}
+      {hint && <div className="knob-hint">{hint}</div>}
     </div>
   );
 }

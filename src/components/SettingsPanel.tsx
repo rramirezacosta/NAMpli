@@ -1,36 +1,23 @@
-import { useState, useEffect } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
+import { useState, useEffect, useRef } from 'react';
 import {
   listAudioDevices as tauriListDevices,
   listAudioHosts as tauriListAudioHosts,
   setAudioDevices as tauriSetAudioDevices,
   setAudioHost as tauriSetAudioHost,
   setBufferSize as tauriSetBufferSize,
-  getAudioStatus as tauriGetAudioStatus,
-  setNoiseGate as tauriSetNoiseGate,
-  clearIr as tauriClearIr,
-  setIrMix as tauriSetIrMix,
-  importAsset,
 } from '../tauri';
 import type { AudioDeviceInfo } from '../tauri';
-import type { AssetRef } from '../types/preset';
 import { notifyError } from '../notifications';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import './SettingsPanel.css';
-
-import type { AmpSettings } from '../types/amp';
 
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
-  settings: AmpSettings;
-  onSetInputVolume: (v: number) => void;
-  onSetGate: (v: number) => void;
-  onSetBass: (v: number) => void;
-  onSetMiddle: (v: number) => void;
-  onSetTreble: (v: number) => void;
-  onSetOutputVolume: (v: number) => void;
-  onIrImported: (asset: AssetRef) => void;
-  onIrCleared: () => void;
+  backgroundEnabled: boolean;
+  backgroundIntensity: number;
+  onSetBackgroundEnabled: (enabled: boolean) => void;
+  onSetBackgroundIntensity: (intensity: number) => void;
 }
 
 const BUFFER_SIZE_OPTIONS = [
@@ -51,15 +38,10 @@ const BUFFER_SIZE_OPTIONS = [
 export default function SettingsPanel({
   open: isOpen,
   onClose,
-  settings: _settings,
-  onSetInputVolume: _onSetInputVolume,
-  onSetGate: _onSetGate,
-  onSetBass: _onSetBass,
-  onSetMiddle: _onSetMiddle,
-  onSetTreble: _onSetTreble,
-  onSetOutputVolume: _onSetOutputVolume,
-  onIrImported,
-  onIrCleared,
+  backgroundEnabled,
+  backgroundIntensity,
+  onSetBackgroundEnabled,
+  onSetBackgroundIntensity,
 }: SettingsPanelProps) {
   const [hosts, setHosts] = useState<string[]>([]);
   const [selectedHost, setSelectedHost] = useState<string>('');
@@ -69,12 +51,8 @@ export default function SettingsPanel({
   const [selectedOutput, setSelectedOutput] = useState<string>('');
   const [bufferSize, setBufferSize] = useState<number>(256);
 
-  const [irName, setIrName] = useState<string | null>(null);
-  const [irMix, setIrMix] = useState<number>(100);
-
-  const [gateEnabled, setGateEnabled] = useState<boolean>(false);
-  const [gateThreshold, setGateThreshold] = useState<number>(-60);
-  const [gateDecay, setGateDecay] = useState<number>(120);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(isOpen, onClose, panelRef);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -89,13 +67,6 @@ export default function SettingsPanel({
 
         const host = selectedHost || availableHosts[0] || '';
         if (!selectedHost && host) setSelectedHost(host);
-
-        try {
-          const status = await tauriGetAudioStatus();
-          if (!cancelled && status.irName) setIrName(status.irName);
-        } catch {
-          // ignore
-        }
 
         const devices = await tauriListDevices(host || undefined);
         if (cancelled) return;
@@ -120,18 +91,7 @@ export default function SettingsPanel({
       }
     };
 
-    const loadStatus = async () => {
-      try {
-        const status = await tauriGetAudioStatus();
-        if (cancelled) return;
-        if (status.irName) setIrName(status.irName);
-      } catch {
-        // Status is best-effort; the panel still works without it.
-      }
-    };
-
     void load();
-    void loadStatus();
 
     return () => {
       cancelled = true;
@@ -191,64 +151,6 @@ export default function SettingsPanel({
     }
   };
 
-  const handleLoadIr = async () => {
-    try {
-      const selected = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: 'Cabinet Impulse Response (WAV)', extensions: ['wav'] }],
-      });
-      if (!selected || Array.isArray(selected)) return;
-      const filename = selected.split(/[\\/]/).pop() ?? selected;
-      const asset = await importAsset('ir', filename, selected);
-      setIrName(asset.name);
-      onIrImported(asset);
-    } catch (err) {
-      console.error('Failed to load cabinet IR:', err);
-      notifyError(`Could not load that impulse response: ${err}`);
-    }
-  };
-
-  const handleClearIr = async () => {
-    try {
-      await tauriClearIr();
-      setIrName(null);
-      onIrCleared();
-    } catch (err) {
-      console.error('Failed to clear cabinet IR:', err);
-      notifyError('Could not remove the cabinet IR.');
-    }
-  };
-
-  const handleIrMix = (value: number) => {
-    setIrMix(value);
-    tauriSetIrMix(value / 100).catch((err) => {
-      console.error('Failed to set IR mix:', err);
-    });
-  };
-
-  const pushGateSettings = (enabled: boolean, threshold: number, decay: number) => {
-    tauriSetNoiseGate(enabled, threshold, decay).catch((err) => {
-      console.error('Failed to set noise gate:', err);
-      notifyError('Could not update the noise gate.');
-    });
-  };
-
-  const handleGateToggle = (enabled: boolean) => {
-    setGateEnabled(enabled);
-    pushGateSettings(enabled, gateThreshold, gateDecay);
-  };
-
-  const handleGateThreshold = (threshold: number) => {
-    setGateThreshold(threshold);
-    pushGateSettings(gateEnabled, threshold, gateDecay);
-  };
-
-  const handleGateDecay = (decay: number) => {
-    setGateDecay(decay);
-    pushGateSettings(gateEnabled, gateThreshold, decay);
-  };
-
   const getInputLabel = () => {
     const device = inputDevices.find((d) => d.id === selectedInput);
     return device?.label || 'No input device';
@@ -263,9 +165,17 @@ export default function SettingsPanel({
 
   return (
     <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="settings-panel"
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="settings-header">
-          <h2>Settings</h2>
+          <h2 id="settings-title">Settings</h2>
           <button className="settings-close" onClick={onClose} aria-label="Close settings">
             &times;
           </button>
@@ -360,91 +270,41 @@ export default function SettingsPanel({
         </div>
 
         <div className="settings-section">
-          <h3>Cabinet</h3>
+          <h3>Visualization</h3>
 
           <div className="setting-row">
-            <label className="setting-label">Impulse Response</label>
-            <div className="setting-inline">
-              <button className="setting-button" onClick={handleLoadIr}>
-                Load IR&hellip;
-              </button>
-              {irName && (
-                <button className="setting-button setting-button-secondary" onClick={handleClearIr}>
-                  Remove
-                </button>
-              )}
-            </div>
+            <label className="setting-label" htmlFor="background-visualization-enabled">
+              Background visualization
+            </label>
+            <input
+              id="background-visualization-enabled"
+              className="settings-checkbox"
+              type="checkbox"
+              checked={backgroundEnabled}
+              onChange={(e) => onSetBackgroundEnabled(e.target.checked)}
+            />
             <span className="setting-value">
-              {irName ??
-                'No cabinet IR loaded. The captures are amp-only, so the raw output will sound bright and fizzy.'}
+              Ambient waveform and spectrum behind the faceplate.
             </span>
           </div>
 
           <div className="setting-row">
-            <label className="setting-label">Cabinet Mix</label>
+            <label className="setting-label" htmlFor="background-visualization-intensity">
+              Intensity
+            </label>
             <input
-              className="setting-slider"
+              id="background-visualization-intensity"
+              className="settings-range"
               type="range"
               min={0}
               max={100}
-              step={1}
-              value={irMix}
-              disabled={!irName}
-              onChange={(e) => handleIrMix(Number(e.target.value))}
+              value={backgroundIntensity}
+              disabled={!backgroundEnabled}
+              onChange={(e) => onSetBackgroundIntensity(Number(e.target.value))}
             />
-            <span className="setting-value">
-              {irMix}% cabinet &middot; {100 - irMix}% direct
-            </span>
+            <span className="setting-value">{backgroundIntensity}%</span>
           </div>
         </div>
-
-        <div className="settings-section">
-          <h3>Noise Gate</h3>
-
-          <div className="setting-row setting-toggle-row">
-            <label className="setting-label" htmlFor="gate-enabled">
-              Enable
-            </label>
-            <input
-              id="gate-enabled"
-              className="setting-checkbox"
-              type="checkbox"
-              checked={gateEnabled}
-              onChange={(e) => handleGateToggle(e.target.checked)}
-            />
-          </div>
-
-          <div className="setting-row">
-            <label className="setting-label">Threshold</label>
-            <input
-              className="setting-slider"
-              type="range"
-              min={-80}
-              max={-20}
-              step={1}
-              value={gateThreshold}
-              disabled={!gateEnabled}
-              onChange={(e) => handleGateThreshold(Number(e.target.value))}
-            />
-            <span className="setting-value">{gateThreshold} dBFS</span>
-          </div>
-
-          <div className="setting-row">
-            <label className="setting-label">Decay</label>
-            <input
-              className="setting-slider"
-              type="range"
-              min={20}
-              max={500}
-              step={10}
-              value={gateDecay}
-              disabled={!gateEnabled}
-              onChange={(e) => handleGateDecay(Number(e.target.value))}
-            />
-            <span className="setting-value">{gateDecay} ms</span>
-          </div>
-        </div>
-
       </div>
     </div>
   );

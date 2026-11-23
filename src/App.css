@@ -1,34 +1,75 @@
 .app {
+  position: relative;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
   height: 100vh;
-  background: #0a0a0a;
+  background: var(--bg-app);
+  overflow: hidden;
 }
 
+/* Center the amp panel in the space below the chrome; never scroll. */
+/* Positioned so it paints above the absolutely placed background canvas. */
 .app-content {
+  position: relative;
+  z-index: 1;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1.5rem;
-  width: 100%;
-  max-width: 1000px;
-  padding-top: calc(32px + 2rem);
-  padding-right: 1rem;
-  padding-bottom: 1.5rem;
-  padding-left: 1rem;
-  overflow-y: auto;
   flex: 1;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 12px;
+  overflow: hidden;
 }
 
-.controls-row {
+/* Window tool buttons positioned at the top-right corner, below the native title bar */
+.window-tools {
+  position: fixed;
+  top: 0.5rem;
+  right: 1rem;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 1rem;
-  width: 100%;
-  max-width: 700px;
+  gap: 2px;
+  z-index: 400;
+}
+
+.window-tools .tool-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: rgba(212, 175, 55, 0.55);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.window-tools .tool-button:hover {
+  color: var(--gold-bright);
+  background: var(--gold-soft);
+  border-color: var(--gold-line);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.18);
+}
+
+.window-tools .tool-button:active {
+  background: rgba(212, 175, 55, 0.2);
+  transform: translateY(1px);
+}
+
+.window-tools .tool-button:focus-visible {
+  outline: 1px solid var(--gold-bright);
+  outline-offset: -2px;
 }
 
 .tuner-popup-overlay {
@@ -38,14 +79,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
-  padding: 132px 12px 0 0;
+  padding: 40px 12px 0 0;
   z-index: 300;
 }
 
 .tuner-popup {
   background: rgba(16, 16, 16, 0.96);
-  border: 1px solid rgba(212, 175, 55, 0.25);
-  border-radius: 8px;
+  border: 1px solid var(--gold-line);
+  border-radius: var(--radius);
   padding: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
@@ -62,13 +103,20 @@
 .tuner-popup-close {
   display: block;
   margin: 8px auto 0;
-  padding: 4px 10px;
+  padding: 4px 12px;
+  min-height: 26px;
   background: transparent;
   border: 1px solid rgba(212, 175, 55, 0.4);
-  color: #d4af37;
+  color: var(--gold);
   border-radius: 4px;
   cursor: pointer;
+  font: inherit;
   font-size: 0.75rem;
+}
+
+.tuner-popup-close:hover {
+  background: var(--gold-soft);
+  border-color: rgba(212, 175, 55, 0.7);
 }
 
 /* Drop zone overlay for unnamed mode */
@@ -99,7 +147,7 @@
 }
 
 .drop-zone-content p {
-  color: #d4af37;
+  color: var(--gold);
   font-size: 1.2rem;
   margin: 0;
 }
@@ -113,6 +161,7 @@
   align-items: center;
   justify-content: center;
   z-index: 600;
+  backdrop-filter: blur(3px);
 }
 
 .confirm-dialog {
@@ -130,14 +179,14 @@
 }
 
 .confirm-dialog-title {
-  color: #d4af37;
+  color: var(--gold);
   font-size: 1.2rem;
   font-weight: 600;
   margin: 0;
 }
 
 .confirm-dialog-message {
-  color: #c0b090;
+  color: var(--text-muted);
   font-size: 0.9rem;
   margin: 0;
   text-align: center;
@@ -145,11 +194,11 @@
 }
 
 .confirm-dialog-filename {
-  color: #e0d0b0;
+  color: var(--text);
   font-size: 0.85rem;
   font-family: monospace;
-  background: rgba(212, 175, 55, 0.08);
-  border: 1px solid rgba(212, 175, 55, 0.15);
+  background: var(--gold-soft);
+  border: 1px solid var(--gold-line);
   border-radius: 4px;
   padding: 6px 12px;
   margin: 0.25rem 0 0.5rem;
@@ -164,8 +213,10 @@
 }
 
 .confirm-dialog-btn {
+  min-height: 34px;
   padding: 8px 24px;
   border-radius: 6px;
+  font: inherit;
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
@@ -176,19 +227,19 @@
 .confirm-dialog-btn.cancel {
   background: transparent;
   border-color: rgba(200, 200, 200, 0.3);
-  color: #b0b0b0;
+  color: var(--text-muted);
 }
 
 .confirm-dialog-btn.cancel:hover {
   background: rgba(200, 200, 200, 0.1);
   border-color: rgba(200, 200, 200, 0.5);
-  color: #e0e0e0;
+  color: var(--text);
 }
 
 .confirm-dialog-btn.load {
-  background: rgba(212, 175, 55, 0.15);
+  background: var(--gold-soft);
   border-color: rgba(212, 175, 55, 0.4);
-  color: #d4af37;
+  color: var(--gold);
 }
 
 .confirm-dialog-btn.load:hover {

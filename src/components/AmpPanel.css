@@ -1,26 +1,24 @@
 .amp-panel {
-  padding: 1.25rem 2rem 2rem;
-  max-width: 900px;
-  width: 100%;
-  transition: box-shadow 0.3s ease;
   position: relative;
-  overflow: hidden;
-  background: linear-gradient(180deg, #1a1a1a 0%, #111 50%, #0d0d0d 100%);
-  border: 1px solid rgba(212, 175, 55, 0.15);
-  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--panel-max), calc(100vw - 120px));
+  padding: 0 1.5rem 1rem;
+  background: linear-gradient(180deg, #1c1c1c 0%, var(--bg-panel) 55%, #0e0e0e 100%);
+  border: 1px solid var(--gold-line);
+  border-radius: 8px;
   box-shadow:
-    0 2px 16px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    0 4px 28px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: box-shadow 0.3s ease;
+  overflow: hidden;
 }
 
 /* Textured panel background resembling a real amp faceplate */
 .amp-panel::before {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background:
     repeating-linear-gradient(
       90deg,
@@ -41,16 +39,15 @@
 }
 
 .amp-panel.power-on {
-  box-shadow: 0 4px 32px rgba(212, 175, 55, 0.15);
+  box-shadow:
+    0 4px 32px rgba(212, 175, 55, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .amp-panel.power-on::after {
   content: "";
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   background: radial-gradient(
     ellipse at 50% 0%,
     rgba(212, 175, 55, 0.05) 0%,
@@ -60,20 +57,36 @@
   z-index: 0;
 }
 
+/* Preset rail: full-width, visually separated from the brand plate. */
+.preset-rail {
+  position: relative;
+  z-index: 1;
+  margin: 0 -1.5rem;
+  padding: 0.65rem 1.5rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid var(--gold-line);
+}
+
 .panel-header {
   text-align: center;
-  margin-bottom: 1.25rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 2px solid rgba(212, 175, 55, 0.4);
+  padding: 0.85rem 0 0.7rem;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.16);
   position: relative;
   z-index: 1;
 }
 
+.panel-title-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
 .panel-title {
-  font-size: 2.2rem;
+  font-size: 1.9rem;
   font-weight: 800;
-  color: #f0d060;
-  letter-spacing: 0.2em;
+  color: var(--gold-bright);
+  letter-spacing: 0.18em;
+  line-height: 1.1;
   margin: 0;
   text-shadow:
     0 0 12px rgba(212, 175, 55, 0.5),
@@ -81,36 +94,122 @@
   text-transform: uppercase;
 }
 
-.panel-subtitle {
-  font-size: 0.8rem;
-  color: #aaa;
-  letter-spacing: 0.4em;
-  margin: 0.4rem 0 0;
+.panel-readout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+  max-width: 100%;
+  font-size: 0.68rem;
+  color: var(--text-muted);
   text-transform: uppercase;
-  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.readout-item {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.readout-separator {
+  color: var(--gold);
+}
+
+.state-pill {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--gold-line);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.state-pill.live {
+  color: var(--ok);
+  border-color: rgba(111, 221, 139, 0.5);
+  background: rgba(111, 221, 139, 0.1);
+}
+
+.state-pill.standby {
+  color: var(--gold-bright);
+  border-color: rgba(212, 175, 55, 0.5);
+  background: var(--gold-soft);
 }
 
 .knob-row {
   display: flex;
   justify-content: center;
-  flex-wrap: wrap;
-  gap: 1.5rem 2rem;
+  flex-wrap: nowrap;
+  gap: 1.25rem;
+  padding: 1rem 0;
   position: relative;
   z-index: 1;
 }
 
 .knob-group {
   display: flex;
-  gap: 1rem;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid rgba(212, 175, 55, 0.12);
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.25);
-}
-
-/* Centered title group for static "NAMpli" header */
-.panel-title-group {
-  display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 1rem 0.7rem;
+  border: 1px solid rgba(212, 175, 55, 0.14);
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.knob-group-title {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.knob-group-controls {
+  display: flex;
+  gap: 1rem;
+}
+
+.panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.25rem 0.15rem;
+  border-top: 1px solid rgba(212, 175, 55, 0.16);
+  position: relative;
+  z-index: 1;
+}
+
+.panel-footer-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.footer-chip {
+  padding: 2px 8px;
+  border: 1px solid rgba(212, 175, 55, 0.2);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.footer-chip.on {
+  color: var(--gold-bright);
+  border-color: rgba(212, 175, 55, 0.5);
+  background: var(--gold-soft);
+}
+
+.footer-hint {
+  color: var(--text-dim);
+  font-size: 0.62rem;
 }

@@ -3,8 +3,9 @@ mod audio_engine;
 mod commands;
 mod eq;
 mod ir;
+mod reverb;
 mod tuner;
-mod window_controls;
+mod visualizer;
 
 use audio_engine::AudioEngine;
 use model_manager::ModelManager;
@@ -49,9 +50,13 @@ pub fn run() {
             commands::set_noise_gate,
             commands::load_ir,
             commands::clear_ir,
+            commands::clear_nam,
             commands::set_ir_mix,
+            commands::set_reverb,
             commands::get_audio_status,
             commands::get_tuner,
+            commands::get_visualization,
+            commands::set_visualization_enabled,
             commands::set_buffer_size,
             commands::list_presets,
             commands::save_preset,
@@ -68,7 +73,6 @@ pub fn run() {
             commands::load_nam_from_path,
             commands::save_ir_file,
             commands::log_to_terminal,
-            window_controls::get_window_controls_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while building tauri application");

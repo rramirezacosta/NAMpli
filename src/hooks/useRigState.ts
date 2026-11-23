@@ -9,12 +9,15 @@ import {
   setTreble as tauriSetTreble,
   setPreamp as tauriSetPreamp,
   setMasterVolume as tauriSetMasterVolume,
+  setReverb as tauriSetReverb,
   setNoiseGate as tauriSetNoiseGate,
   togglePower as tauriTogglePower,
+  clearNam as tauriClearNam,
+  clearIr as tauriClearIr,
 } from '../tauri';
 
 /**
- * Single source of truth for everything a preset captures: the six front-panel
+ * Single source of truth for everything a preset captures: the seven front-panel
  * knobs plus the currently loaded NAM and IR. Power is intentionally excluded.
  */
 export function useRigState() {
@@ -84,6 +87,16 @@ export function useRigState() {
     }
   }, []);
 
+  const setReverb = useCallback(async (value: number) => {
+    setSettings((prev) => ({ ...prev, reverb: value }));
+    try {
+      await tauriSetReverb(value / 10);
+    } catch (err) {
+      console.error('Failed to set reverb:', err);
+      notifyError('Could not change the reverb.');
+    }
+  }, []);
+
   const togglePower = useCallback(async () => {
     try {
       const newPower = await tauriTogglePower();
@@ -102,11 +115,24 @@ export function useRigState() {
       middle: settings.middle,
       treble: settings.treble,
       outputVolume: settings.outputVolume,
+      reverb: settings.reverb,
       model,
       ir,
     }),
     [settings, model, ir],
   );
+
+  /** Load bypass: drop the NAM and cabinet IR while leaving the knobs as they are. */
+  const clearModelAndIr = useCallback(async () => {
+    setModel(null);
+    setIr(null);
+    try {
+      await Promise.all([tauriClearNam(), tauriClearIr()]);
+    } catch (err) {
+      console.error('Failed to clear NAM/IR:', err);
+      notifyError(`Could not clear the loaded model: ${err}`);
+    }
+  }, []);
 
   /** Recall a preset: update React state and push the knobs to the backend. */
   const applySnapshot = useCallback(
@@ -119,8 +145,9 @@ export function useRigState() {
       void setMiddle(next.middle);
       void setTreble(next.treble);
       void setOutputVolume(next.outputVolume);
+      void setReverb(next.reverb);
     },
-    [setInputVolume, setGate, setBass, setMiddle, setTreble, setOutputVolume],
+    [setInputVolume, setGate, setBass, setMiddle, setTreble, setOutputVolume, setReverb],
   );
 
   return {
@@ -135,9 +162,11 @@ export function useRigState() {
     setMiddle,
     setTreble,
     setOutputVolume,
+    setReverb,
     togglePower,
     snapshot,
     applySnapshot,
+    clearModelAndIr,
   };
 }
 

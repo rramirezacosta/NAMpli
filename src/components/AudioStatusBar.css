@@ -6,8 +6,8 @@
   align-items: center;
   gap: 8px;
   max-width: calc(100vw - 24px);
-  font-size: 0.66rem;
-  color: #666;
+  font-size: 0.7rem;
+  color: var(--text-muted);
   z-index: 150;
   pointer-events: none;
   font-variant-numeric: tabular-nums;
@@ -23,7 +23,7 @@
 }
 
 .audio-status.live .audio-status-dot {
-  background: #6fdd8b;
+  background: var(--ok);
   box-shadow: 0 0 6px rgba(111, 221, 139, 0.6);
 }
 
@@ -32,15 +32,11 @@
 }
 
 .audio-status-ir {
-  max-width: 260px;
+  max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #8a7a44;
-  padding-left: 8px;
-  border-left: 1px solid rgba(212, 175, 55, 0.2);
-}
-
-.audio-status-ir:empty {
-  display: none;
+  color: var(--gold);
+  padding-left: 10px;
+  border-left: 1px solid var(--gold-line);
 }

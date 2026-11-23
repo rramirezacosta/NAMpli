@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState, useRef } from 'react';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { exportPresetToPath, importPresetFromPath } from '../tauri';
 import { notifyError, notifySuccess } from '../notifications';
 import type { PresetManager } from '../hooks/usePresetManager';
 import { slotLabel } from '../types/preset';
+import { useDialogFocus } from '../hooks/useDialogFocus';
 import './PresetLibrary.css';
 
 interface PresetLibraryProps {
@@ -16,14 +17,8 @@ export default function PresetLibrary({ open, onClose, manager }: PresetLibraryP
   const [selected, setSelected] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(open, onClose, dialogRef);
 
   if (!open) return null;
 
@@ -62,9 +57,17 @@ export default function PresetLibrary({ open, onClose, manager }: PresetLibraryP
 
   return (
     <div className="preset-library-overlay" onClick={onClose}>
-      <div className="preset-library" onClick={(event) => event.stopPropagation()}>
+      <div
+        className="preset-library"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preset-library-title"
+        tabIndex={-1}
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="preset-library-header">
-          <h2>Preset Library</h2>
+          <h2 id="preset-library-title">Preset Library</h2>
           <button type="button" onClick={onClose} aria-label="Close library">&times;</button>
         </div>
 

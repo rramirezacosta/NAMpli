@@ -5,6 +5,7 @@ export interface AmpSettings {
   middle: number;          // 0-10
   treble: number;          // 0-10
   outputVolume: number;     // 0-10
+  reverb: number;          // 0-10 (room reverb wet mix; 0 = off)
   powerOn: boolean;        // true = on, false = standby
 }
 
@@ -19,5 +20,7 @@ export const DEFAULT_SETTINGS: AmpSettings = {
   middle: 5,
   treble: 5,
   outputVolume: 5,
+  // Reverb starts off so the default sound is unchanged.
+  reverb: 0,
   powerOn: false,
 };

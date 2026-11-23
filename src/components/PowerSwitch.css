@@ -1,26 +1,28 @@
 .power-switch {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.7rem;
 }
 
 .power-btn {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.7rem 2rem;
+  gap: 0.55rem;
+  min-height: 38px;
+  padding: 0.45rem 1.4rem;
   border: 2px solid #555;
-  border-radius: 6px;
+  border-radius: var(--radius);
   background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 50%, #1a1a1a 100%);
-  color: #666;
-  font-size: 0.9rem;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.3s ease;
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  box-shadow: 
+  box-shadow:
     0 2px 6px rgba(0, 0, 0, 0.5),
     inset 0 1px 2px rgba(255, 255, 255, 0.1),
     inset 0 -1px 2px rgba(0, 0, 0, 0.3);
@@ -28,18 +30,18 @@
 
 .power-btn:hover {
   border-color: #777;
-  color: #aaa;
-  box-shadow: 
+  color: var(--text-muted);
+  box-shadow:
     0 2px 10px rgba(0, 0, 0, 0.6),
     inset 0 1px 2px rgba(255, 255, 255, 0.1),
     inset 0 -1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .power-btn.on {
-  border-color: #d4af37;
-  color: #f0d060;
+  border-color: var(--gold);
+  color: var(--gold-bright);
   background: linear-gradient(180deg, #4a4020 0%, #3a3018 50%, #2a2010 100%);
-  box-shadow: 
+  box-shadow:
     0 0 16px rgba(212, 175, 55, 0.4),
     0 2px 6px rgba(0, 0, 0, 0.5),
     inset 0 1px 2px rgba(255, 255, 255, 0.15),
@@ -48,7 +50,7 @@
 }
 
 .power-btn.on:hover {
-  box-shadow: 
+  box-shadow:
     0 0 24px rgba(212, 175, 55, 0.6),
     0 2px 6px rgba(0, 0, 0, 0.5),
     inset 0 1px 2px rgba(255, 255, 255, 0.15),
@@ -56,17 +58,18 @@
 }
 
 .power-icon {
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   line-height: 1;
 }
 
 .power-label {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .power-led {
-  width: 14px;
-  height: 14px;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   transition: all 0.3s ease;
   border: 2px solid #444;
@@ -75,9 +78,9 @@
 
 .power-led.lit {
   background: radial-gradient(circle at 40% 35%, #f0d060, #d4af37, #b8960e);
-  border-color: #d4af37;
-  box-shadow: 
-    0 0 8px #d4af37,
+  border-color: var(--gold);
+  box-shadow:
+    0 0 8px var(--gold),
     0 0 16px rgba(212, 175, 55, 0.6),
     0 0 24px rgba(212, 175, 55, 0.3),
     inset 0 1px 2px rgba(255, 255, 255, 0.3);
@@ -86,7 +89,7 @@
 .power-led.dark {
   background: radial-gradient(circle at 40% 35%, #444, #333, #222);
   border-color: #333;
-  box-shadow: 
+  box-shadow:
     0 0 0 transparent,
     inset 0 1px 3px rgba(0, 0, 0, 0.5);
 }

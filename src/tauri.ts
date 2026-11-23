@@ -60,6 +60,10 @@ export async function setPreamp(value: number): Promise<void> {
   return invoke('set_preamp', { value });
 }
 
+export async function setReverb(value: number): Promise<void> {
+  return invoke('set_reverb', { value });
+}
+
 export async function setNoiseGate(
   enabled: boolean,
   thresholdDb: number,
@@ -74,6 +78,10 @@ export async function loadIr(path: string): Promise<string> {
 
 export async function clearIr(): Promise<void> {
   return invoke('clear_ir');
+}
+
+export async function clearNam(): Promise<void> {
+  return invoke('clear_nam');
 }
 
 export async function setIrMix(value: number): Promise<void> {
@@ -101,6 +109,23 @@ export interface TunerStatus {
 
 export async function getTuner(): Promise<TunerStatus> {
   return invoke('get_tuner');
+}
+
+export interface VisualizationFrame {
+  waveform: number[];
+  spectrum: number[];
+  levelDb: number;
+  peakDb: number;
+}
+
+/** `null` while the Scope is closed, the amp is off, or before the first frame. */
+export async function getVisualization(): Promise<VisualizationFrame | null> {
+  return invoke('get_visualization');
+}
+
+/** Gates the DSP work at source; called when the popup opens/closes and on power changes. */
+export async function setVisualizationEnabled(enabled: boolean): Promise<void> {
+  return invoke('set_visualization_enabled', { enabled });
 }
 
 export async function togglePower(): Promise<boolean> {
@@ -186,17 +211,4 @@ export async function importAsset(
 
 export async function logToTerminal(msg: string): Promise<void> {
   return invoke('log_to_terminal', { msg });
-}
-
-export type WindowControlsSide = 'left' | 'right';
-
-export interface WindowControlsInfo {
-  side: WindowControlsSide;
-  source: string;
-  layout: string | null;
-}
-
-/** Which side of the title bar the OS places its window controls on. */
-export async function getWindowControlsInfo(): Promise<WindowControlsInfo> {
-  return invoke('get_window_controls_info');
 }

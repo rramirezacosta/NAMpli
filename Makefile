@@ -19,8 +19,10 @@ clean:
 	cd src-tauri && $(CARGO) clean
 
 # Development: Tauri dev mode with Vite hot-reload (JACK host enabled)
+# Use the Tauri CLI directly: `npm run ... --features jack` lets npm swallow
+# `--features`, so the JACK feature never reaches Cargo.
 dev:
-	$(NODE) run tauri dev --features jack
+	$(TAURI) dev --features jack
 
 # Build the React frontend only (Vite + TypeScript)
 build:

@@ -41,11 +41,27 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
     };
   }, [menu, dialog]);
 
+  const openMenuAt = (bank: Bank, slot: number, x: number, y: number) => {
+    setDialog(null);
+    setMenu({
+      bank,
+      slot,
+      x: Math.min(x, window.innerWidth - 170),
+      y: Math.min(y, window.innerHeight - 190),
+    });
+  };
+
   const openMenu = (event: React.MouseEvent, bank: Bank, slot: number) => {
     event.preventDefault();
     event.stopPropagation();
-    setDialog(null);
-    setMenu({ bank, slot, x: event.clientX, y: event.clientY });
+    openMenuAt(bank, slot, event.clientX, event.clientY);
+  };
+
+  const openMenuFromKeyboard = (event: React.KeyboardEvent, bank: Bank, slot: number) => {
+    if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    openMenuAt(bank, slot, rect.left, rect.bottom);
   };
 
   const submitDialog = (event: React.FormEvent) => {
@@ -82,21 +98,48 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
         {SLOTS.map((number) => {
           const meta = manager.metaAt(manager.bank, number);
           const active = !!meta && manager.activeName === meta.name;
+          const selected = manager.slot === number;
+          const showDirty = manager.dirty && (active || (!meta && selected));
+          const menuOpen = menu?.bank === manager.bank && menu.slot === number;
           return (
-            <button
-              key={number}
-              type="button"
-              className={`preset-slot ${active ? 'active' : ''} ${meta ? '' : 'empty'}`}
-              onClick={() => void manager.recallAt(manager.bank, number)}
-              onContextMenu={(event) => openMenu(event, manager.bank, number)}
-              title={meta ? `Recall ${meta.name}` : 'Empty slot — right-click to save'}
-              disabled={manager.busy}
-            >
-              <span className="preset-slot-number">{number}</span>
-              <span className="preset-slot-name">{meta?.name ?? 'Empty'}</span>
-              <span className="preset-slot-model">{meta?.modelName ?? 'no model'}</span>
-              {active && manager.dirty && <span className="preset-dirty">•</span>}
-            </button>
+            <div className="preset-slot-wrap" key={number}>
+              <button
+                type="button"
+                className={`preset-slot ${selected ? 'selected' : ''} ${active ? 'active' : ''} ${meta ? '' : 'empty'}`}
+                onClick={() => {
+                  if (meta) void manager.recallAt(manager.bank, number);
+                  else manager.selectAt(manager.bank, number);
+                }}
+                onContextMenu={(event) => openMenu(event, manager.bank, number)}
+                onKeyDown={(event) => openMenuFromKeyboard(event, manager.bank, number)}
+                title={meta ? `Recall ${meta.name}` : 'Empty slot — click to select, then press Save'}
+                aria-pressed={selected}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                disabled={manager.busy}
+              >
+                <span className="preset-slot-number">{number}</span>
+                <span className="preset-slot-name">{meta?.name ?? 'Empty'}</span>
+                <span className="preset-slot-model">{meta?.modelName ?? 'no model'}</span>
+                {showDirty && (
+                  <span className="preset-dirty" title="Unsaved changes">•</span>
+                )}
+              </button>
+              <button
+                type="button"
+                className="preset-slot-menu-trigger"
+                onClick={(event) => openMenu(event, manager.bank, number)}
+                onContextMenu={(event) => openMenu(event, manager.bank, number)}
+                onKeyDown={(event) => openMenuFromKeyboard(event, manager.bank, number)}
+                aria-label={`Actions for slot ${number}${meta ? ` (${meta.name})` : ''}`}
+                title="Slot actions"
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                disabled={manager.busy}
+              >
+                ⋯
+              </button>
+            </div>
           );
         })}
       </div>
@@ -125,15 +168,19 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
       {menu && (
         <div
           className="preset-menu"
+          role="menu"
           style={{ left: menu.x, top: menu.y }}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="preset-menu-title">{slotLabel(menu.bank, menu.slot)} · {menuMeta?.name ?? 'Empty'}</div>
-          <button type="button" onClick={() => { void manager.save(undefined, menu.bank, menu.slot); setMenu(null); }}>
+          <div className="preset-menu-title">
+            {slotLabel(menu.bank, menu.slot)} · {menuMeta?.name ?? 'Empty'}
+          </div>
+          <button type="button" role="menuitem" onClick={() => { void manager.save(undefined, menu.bank, menu.slot); setMenu(null); }}>
             Save here
           </button>
           <button
             type="button"
+            role="menuitem"
             onClick={() => {
               setDialog({ mode: 'saveAs', name: menuMeta?.name ?? `Preset ${slotLabel(menu.bank, menu.slot)}`, bank: menu.bank, slot: menu.slot });
               setMenu(null);
@@ -145,6 +192,7 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
             <>
               <button
                 type="button"
+                role="menuitem"
                 onClick={() => {
                   setDialog({ mode: 'rename', source: menuMeta.name, name: menuMeta.name });
                   setMenu(null);
@@ -154,6 +202,7 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
               </button>
               <button
                 type="button"
+                role="menuitem"
                 className="danger"
                 onClick={() => { void manager.remove(menuMeta.name); setMenu(null); }}
               >
@@ -166,8 +215,15 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
 
       {dialog && (
         <div className="preset-dialog-overlay" onClick={() => setDialog(null)}>
-          <form className="preset-dialog" onClick={(event) => event.stopPropagation()} onSubmit={submitDialog}>
-            <h3>{dialog.mode === 'saveAs' ? 'Save preset' : 'Rename preset'}</h3>
+          <form
+            className="preset-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="preset-dialog-title"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={submitDialog}
+          >
+            <h3 id="preset-dialog-title">{dialog.mode === 'saveAs' ? 'Save preset' : 'Rename preset'}</h3>
             <label htmlFor="preset-name-input">Name</label>
             <input
               id="preset-name-input"

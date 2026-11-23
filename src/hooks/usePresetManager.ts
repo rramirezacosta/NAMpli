@@ -27,6 +27,7 @@ const KNOB_KEYS = [
   'middle',
   'treble',
   'outputVolume',
+  'reverb',
 ] as const;
 
 function sameAsset(a: RigSnapshot['model'], b: RigSnapshot['model']): boolean {
@@ -46,6 +47,7 @@ function sameRig(a: RigSnapshot, b: RigSnapshot): boolean {
 export function usePresetManager(
   snapshot: RigSnapshot,
   applySnapshot: (rig: RigSnapshot) => void,
+  clearModelAndIr: () => Promise<void>,
 ) {
   const [metas, setMetas] = useState<PresetMeta[]>([]);
   const [bank, setBank] = useState<Bank>('A');
@@ -106,6 +108,22 @@ export function usePresetManager(
   );
 
   const recall = useCallback(() => recallAt(bank, slot), [recallAt, bank, slot]);
+
+  /**
+   * Select an empty slot: it holds no NAM or IR, so load bypass (keep the knob
+   * positions) and make it the Save target. Clearing the active name makes Save
+   * default to a name for this slot instead of reusing one stored elsewhere.
+   */
+  const selectAt = useCallback(
+    (targetBank: Bank, targetSlot: number) => {
+      setBank(targetBank);
+      setSlot(targetSlot);
+      setActiveName(null);
+      setBaseline({ ...snapshot, model: null, ir: null });
+      void clearModelAndIr();
+    },
+    [snapshot, clearModelAndIr],
+  );
 
   const save = useCallback(
     async (name?: string, targetBank: Bank = bank, targetSlot: number = slot) => {
@@ -216,15 +234,13 @@ export function usePresetManager(
     }
 
     const otherBank: Bank = bank === 'A' ? 'B' : 'A';
-    if (!metaAt(otherBank, slot)) {
-      notifyError(`Slot ${otherBank}${slot} is empty`);
-      return;
-    }
     compareBackup.current = { snapshot, bank, slot, activeName, baseline };
     setComparing(true);
-    await recallAt(otherBank, slot);
+    // An empty slot holds no NAM/IR, so comparing against it means bypass.
+    if (metaAt(otherBank, slot)) await recallAt(otherBank, slot);
+    else selectAt(otherBank, slot);
     if (compareBackup.current === null) setComparing(false);
-  }, [comparing, bank, slot, metaAt, snapshot, activeName, baseline, applySnapshot, recallAt]);
+  }, [comparing, bank, slot, metaAt, snapshot, activeName, baseline, applySnapshot, recallAt, selectAt]);
 
   const exportJson = useCallback(async () => {
     if (!activeName) {
@@ -266,6 +282,7 @@ export function usePresetManager(
     metaAt,
     recall,
     recallAt,
+    selectAt,
     save,
     rename,
     remove,

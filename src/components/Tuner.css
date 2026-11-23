@@ -6,7 +6,7 @@
   padding: 8px 10px 10px;
   background: rgba(16, 16, 16, 0.92);
   border: 1px solid rgba(212, 175, 55, 0.18);
-  border-radius: 6px;
+  border-radius: var(--radius);
   z-index: 150;
   opacity: 0.55;
   transition: opacity 0.2s ease, border-color 0.2s ease;
@@ -34,12 +34,12 @@
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #8a7a44;
+  color: var(--text-muted);
 }
 
 .tuner-hz {
   font-size: 0.6rem;
-  color: #777;
+  color: var(--text-dim);
   font-variant-numeric: tabular-nums;
 }
 
@@ -53,23 +53,23 @@
   font-size: 1.6rem;
   font-weight: 800;
   line-height: 1.1;
-  color: #d4af37;
+  color: var(--gold);
   font-variant-numeric: tabular-nums;
 }
 
 .tuner.in-tune .tuner-note {
-  color: #6fdd8b;
+  color: var(--ok);
   text-shadow: 0 0 10px rgba(111, 221, 139, 0.4);
 }
 
 .tuner-cents {
   font-size: 0.7rem;
-  color: #999;
+  color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .tuner.in-tune .tuner-cents {
-  color: #6fdd8b;
+  color: var(--ok);
 }
 
 .tuner-meter {
@@ -113,11 +113,11 @@
   bottom: -2px;
   width: 3px;
   border-radius: 2px;
-  background: #d4af37;
+  background: var(--gold);
   transform: translateX(-50%);
   transition: left 0.08s linear;
 }
 
 .tuner.in-tune .tuner-meter-needle {
-  background: #6fdd8b;
+  background: var(--ok);
 }

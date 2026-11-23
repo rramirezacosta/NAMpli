@@ -3,13 +3,17 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useRigState } from './hooks/useRigState';
 import { usePresetManager } from './hooks/usePresetManager';
 import { useAudioStatus } from './hooks/useAudioStatus';
-import TitleBar from './components/TitleBar';
+import { useDialogFocus } from './hooks/useDialogFocus';
+import { useVisualization } from './hooks/useVisualization';
+import { useBackgroundVisualizationSettings } from './hooks/useBackgroundVisualizationSettings';
+import BackgroundVisualization from './components/BackgroundVisualization';
 import AmpPanel from './components/AmpPanel';
-import PowerSwitch from './components/PowerSwitch';
 import SettingsIcon from './components/SettingsIcon';
 import TunerIcon from './components/TunerIcon';
+import VisualizationIcon from './components/VisualizationIcon';
 import SettingsPanel from './components/SettingsPanel';
 import Tuner from './components/Tuner';
+import Visualization from './components/Visualization';
 import AudioStatusBar from './components/AudioStatusBar';
 import Toast from './components/Toast';
 import PresetLibrary from './components/PresetLibrary';
@@ -35,6 +39,7 @@ function log(...args: unknown[]) {
 function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTuner, setShowTuner] = useState(false);
+  const [showVisualization, setShowVisualization] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false);
 
   // Drag-and-drop state for unnamed mode
@@ -44,8 +49,26 @@ function App() {
   // Confirmation dialog state for NAM files
   const [pendingNam, setPendingNam] = useState<PendingNam | null>(null);
 
+  const tunerPopupRef = useRef<HTMLDivElement>(null);
+  const visualizationPopupRef = useRef<HTMLDivElement>(null);
+  const confirmDialogRef = useRef<HTMLDivElement>(null);
+
+  const closeSettings = () => setShowSettings(false);
+  const closeTuner = () => setShowTuner(false);
+  const closeVisualization = () => setShowVisualization(false);
+  const closeLibrary = () => setShowLibrary(false);
+  // The two analyser popups share the same corner, so only one is visible at a time.
+  const openTuner = () => {
+    setShowVisualization(false);
+    setShowTuner(true);
+  };
+  const openVisualization = () => {
+    setShowTuner(false);
+    setShowVisualization(true);
+  };
+
   const rig = useRigState();
-  const presetManager = usePresetManager(rig.snapshot(), rig.applySnapshot);
+  const presetManager = usePresetManager(rig.snapshot(), rig.applySnapshot, rig.clearModelAndIr);
   const {
     settings,
     setInputVolume,
@@ -54,11 +77,19 @@ function App() {
     setMiddle,
     setTreble,
     setOutputVolume,
+    setReverb,
     togglePower,
     setModel,
     setIr,
   } = rig;
   const audioStatus = useAudioStatus();
+  const background = useBackgroundVisualizationSettings();
+
+  // Single polling loop and enable flag for both the background and the popup.
+  const visualizationFrame = useVisualization(
+    background.enabled || showVisualization,
+    settings.powerOn,
+  );
 
   /** Extract the file name from a path reported by Tauri's native drop event. */
   const fileNameFromPath = (path: string) =>
@@ -113,6 +144,10 @@ function App() {
       log('[IMPORT] NAM load cancelled:', filename);
     }
   };
+
+  useDialogFocus(showTuner, closeTuner, tunerPopupRef);
+  useDialogFocus(showVisualization, closeVisualization, visualizationPopupRef);
+  useDialogFocus(!!pendingNam, handleCancelLoadNam, confirmDialogRef);
 
   // Native drag-and-drop: browsers' onDrop does not fire for OS file drops in
   // the Tauri webview, so listen to the webview event which carries file paths.
@@ -223,30 +258,54 @@ function App() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      <TitleBar />
-      <SettingsIcon onClick={() => setShowSettings(true)} />
-      <TunerIcon onClick={() => setShowTuner(true)} />
+      <BackgroundVisualization frame={visualizationFrame} intensity={background.intensity} />
+      <div className="window-tools">
+        <SettingsIcon onClick={() => setShowSettings(true)} />
+        <TunerIcon onClick={openTuner} />
+        <VisualizationIcon onClick={openVisualization} />
+      </div>
       <AudioStatusBar status={audioStatus} />
       <Toast />
       <SettingsPanel
         open={showSettings}
-        onClose={() => setShowSettings(false)}
-        settings={settings}
-        onSetInputVolume={setInputVolume}
-        onSetGate={setGate}
-        onSetBass={setBass}
-        onSetMiddle={setMiddle}
-        onSetTreble={setTreble}
-        onSetOutputVolume={setOutputVolume}
-        onIrImported={setIr}
-        onIrCleared={() => setIr(null)}
+        onClose={closeSettings}
+        backgroundEnabled={background.enabled}
+        backgroundIntensity={background.intensity}
+        onSetBackgroundEnabled={background.setEnabled}
+        onSetBackgroundIntensity={background.setIntensity}
       />
-      <PresetLibrary open={showLibrary} onClose={() => setShowLibrary(false)} manager={presetManager} />
+      <PresetLibrary open={showLibrary} onClose={closeLibrary} manager={presetManager} />
       {showTuner && (
-        <div className="tuner-popup-overlay" onClick={() => setShowTuner(false)}>
-          <div className="tuner-popup" onClick={(e) => e.stopPropagation()}>
+        <div className="tuner-popup-overlay" onClick={closeTuner}>
+          <div
+            className="tuner-popup"
+            ref={tunerPopupRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Tuner"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
             <Tuner powered={settings.powerOn} />
-            <button className="tuner-popup-close" onClick={() => setShowTuner(false)}>
+            <button className="tuner-popup-close" onClick={closeTuner}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+      {showVisualization && (
+        <div className="tuner-popup-overlay" onClick={closeVisualization}>
+          <div
+            className="tuner-popup visualization-popup"
+            ref={visualizationPopupRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Scope"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Visualization frame={visualizationFrame} powered={settings.powerOn} />
+            <button className="tuner-popup-close" onClick={closeVisualization}>
               Close
             </button>
           </div>
@@ -256,7 +315,7 @@ function App() {
       {dragOver && (
         <div className="drop-zone-overlay">
           <div className="drop-zone-content">
-            <span className="drop-zone-icon">🎸</span>
+            <span className="drop-zone-icon" aria-hidden="true">🎸</span>
             <p>Drop NAM or IR file to load</p>
           </div>
         </div>
@@ -264,8 +323,16 @@ function App() {
       {/* Confirmation dialog for NAM file loading */}
       {pendingNam && (
         <div className="confirm-dialog-overlay" onClick={handleCancelLoadNam}>
-          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
-            <p className="confirm-dialog-title">Load NAM model?</p>
+          <div
+            className="confirm-dialog"
+            ref={confirmDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-dialog-title"
+            tabIndex={-1}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p className="confirm-dialog-title" id="confirm-dialog-title">Load NAM model?</p>
             <p className="confirm-dialog-message">
               This will replace the currently loaded model.
             </p>
@@ -289,21 +356,21 @@ function App() {
           middle={settings.middle}
           treble={settings.treble}
           outputVolume={settings.outputVolume}
+          reverb={settings.reverb}
           powerOn={settings.powerOn}
           modelName={rig.model?.name ?? null}
           irName={rig.ir?.name ?? null}
           presetManager={presetManager}
           onOpenLibrary={() => setShowLibrary(true)}
+          onTogglePower={togglePower}
           onSetInputVolume={setInputVolume}
           onSetGate={setGate}
           onSetBass={setBass}
           onSetMiddle={setMiddle}
           onSetTreble={setTreble}
           onSetOutputVolume={setOutputVolume}
+          onSetReverb={setReverb}
         />
-        <div className="controls-row">
-          <PowerSwitch powerOn={settings.powerOn} onToggle={togglePower} />
-        </div>
       </div>
     </div>
   );

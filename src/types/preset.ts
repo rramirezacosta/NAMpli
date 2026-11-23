@@ -13,8 +13,8 @@ export interface AssetRef {
 }
 
 /**
- * Exactly what a preset captures: the six front-panel knobs plus the NAM and IR.
- * Settings-panel values (gate section, cab mix, buffer size) are global.
+ * Exactly what a preset captures: the seven front-panel knobs plus the NAM and IR.
+ * Audio device and buffer size settings are global.
  */
 export interface RigSnapshot {
   inputVolume: number;
@@ -23,6 +23,7 @@ export interface RigSnapshot {
   middle: number;
   treble: number;
   outputVolume: number;
+  reverb: number;
   model: AssetRef | null;
   ir: AssetRef | null;
 }
@@ -53,6 +54,7 @@ export const DEFAULT_RIG: RigSnapshot = {
   middle: 5,
   treble: 5,
   outputVolume: 5,
+  reverb: 0,
   model: null,
   ir: null,
 };

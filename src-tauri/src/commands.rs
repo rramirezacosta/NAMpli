@@ -270,6 +270,14 @@ pub fn clear_ir(engine: State<'_, StdMutex<AudioEngine>>) -> Result<(), String> 
     Ok(())
 }
 
+/// Return the amp to bypass (used when selecting a slot with no NAM).
+#[tauri::command]
+pub fn clear_nam(engine: State<'_, StdMutex<AudioEngine>>) -> Result<(), String> {
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    engine.clear_nam();
+    Ok(())
+}
+
 #[tauri::command]
 pub fn set_ir_mix(
     engine: State<'_, StdMutex<AudioEngine>>,
@@ -277,6 +285,16 @@ pub fn set_ir_mix(
 ) -> Result<(), String> {
     let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     engine.set_ir_mix(value);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_reverb(
+    engine: State<'_, StdMutex<AudioEngine>>,
+    value: f32,
+) -> Result<(), String> {
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    engine.set_reverb(value);
     Ok(())
 }
 
@@ -302,6 +320,39 @@ pub fn get_tuner(
     let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let (hz, level_db) = engine.tuner();
     Ok(TunerStatus { hz, level_db })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VisualizationStatus {
+    pub waveform: Vec<f32>,
+    pub spectrum: Vec<f32>,
+    pub level_db: f32,
+    pub peak_db: f32,
+}
+
+#[tauri::command]
+pub fn get_visualization(
+    engine: State<'_, StdMutex<AudioEngine>>,
+) -> Result<Option<VisualizationStatus>, String> {
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    Ok(engine.visualization().map(|frame| VisualizationStatus {
+        waveform: frame.waveform,
+        spectrum: frame.spectrum,
+        level_db: frame.level_db,
+        peak_db: frame.peak_db,
+    }))
+}
+
+/// Turns the Scope's DSP work on/off. Called when the popup opens/closes, not per poll.
+#[tauri::command]
+pub fn set_visualization_enabled(
+    engine: State<'_, StdMutex<AudioEngine>>,
+    enabled: bool,
+) -> Result<(), String> {
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    engine.set_visualization_enabled(enabled);
+    Ok(())
 }
 
 #[tauri::command]
@@ -361,6 +412,9 @@ pub struct RigSnapshot {
     pub treble: f32,
     #[serde(default = "default_knob")]
     pub output_volume: f32,
+    /// Reverb knob, 0..10 (0 = off). Older presets default to off.
+    #[serde(default = "zero")]
+    pub reverb: f32,
     #[serde(default)]
     pub model: Option<AssetRef>,
     #[serde(default)]
@@ -376,6 +430,7 @@ impl Default for RigSnapshot {
             middle: 5.0,
             treble: 5.0,
             output_volume: 5.0,
+            reverb: 0.0,
             model: None,
             ir: None,
         }
@@ -557,6 +612,7 @@ fn parse_preset_json(raw: &str, name: &str) -> Result<PresetPayload, String> {
             middle: legacy.middle,
             treble: legacy.treble,
             output_volume: legacy.output_volume,
+            reverb: 0.0,
             model: None,
             ir: None,
         },
@@ -989,6 +1045,7 @@ mod tests {
                 middle: 7.0,
                 treble: 8.0,
                 output_volume: 5.5,
+                reverb: 3.0,
                 model: Some(AssetRef { id: "nams/abc/JCM800.nam".into(), name: "JCM800.nam".into() }),
                 ir: Some(AssetRef { id: "irs/def/Cab.wav".into(), name: "Cab.wav".into() }),
             },
@@ -998,6 +1055,7 @@ mod tests {
         assert_eq!(parsed.name, "Crunch");
         assert_eq!(parsed.slot, 2);
         assert_eq!(parsed.rig.middle, 7.0);
+        assert_eq!(parsed.rig.reverb, 3.0);
         assert_eq!(parsed.rig.model.unwrap().name, "JCM800.nam");
         assert_eq!(parsed.rig.ir.unwrap().name, "Cab.wav");
     }
@@ -1008,6 +1066,7 @@ mod tests {
         let parsed = parse_preset_json(legacy, "Old").unwrap();
         assert_eq!(parsed.rig.input_volume, 7.0);
         assert_eq!(parsed.rig.bass, 9.0);
+        assert_eq!(parsed.rig.reverb, 0.0);
         assert!(parsed.rig.model.is_none());
         assert!(parsed.rig.ir.is_none());
     }
@@ -1017,6 +1076,7 @@ mod tests {
         let parsed = parse_preset_json(r#"{"name":"Minimal","bank":"B","slot":1}"#, "Minimal").unwrap();
         assert_eq!(parsed.rig.input_volume, 5.0);
         assert_eq!(parsed.rig.output_volume, 5.0);
+        assert_eq!(parsed.rig.reverb, 0.0);
         assert!(parsed.rig.model.is_none());
     }
 

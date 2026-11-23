@@ -1,7 +1,9 @@
 use crate::eq::EqChain;
 use crate::ir::CabinetIr;
 use crate::model_manager::ModelManager;
+use crate::reverb::Reverb;
 use crate::tuner::Tuner;
+use crate::visualizer::{VisualizationFrame, Visualizer};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, SupportedStreamConfig, SupportedStreamConfigRange};
 use parking_lot::Mutex;
@@ -25,6 +27,9 @@ const MIN_LATENCY_FRAMES: usize = 64;
 const MAX_LATENCY_FRAMES: usize = 8192;
 /// Equal-power crossfade length used when the user changes gain/sensitivity.
 const MODEL_CROSSFADE_MS: f32 = 20.0;
+/// Maximum wet amount at Reverb = 10. Keeping some dry signal avoids the
+/// "guitar disappeared into a cloud" sound at the top of the knob.
+const REVERB_MAX_WET: f32 = 0.5;
 
 /// Errors and counters that the UI can display. The stream error callbacks run
 /// on the audio thread, so they only use atomics and `try_lock`.
@@ -95,6 +100,8 @@ pub struct SharedState {
     pub gate_decay_ms: f32,
     /// Dry/wet blend for the cabinet IR, 0..1.
     pub ir_mix: f32,
+    /// Wet mix for the room reverb, 0..1 (0 = off / bypass).
+    pub reverb: f32,
     /// Latest tuner result; `tuner_hz == 0.0` means "no pitch".
     pub tuner_hz: f32,
     pub tuner_level_db: f32,
@@ -122,6 +129,7 @@ impl SharedState {
             gate_threshold_db: -60.0,
             gate_decay_ms: 120.0,
             ir_mix: 1.0,
+            reverb: 0.0,
             tuner_hz: 0.0,
             tuner_level_db: -120.0,
         }
@@ -148,6 +156,10 @@ pub struct AudioEngine {
     active_output_device: Option<String>,
     health: Arc<AudioHealth>,
     ir: Arc<Mutex<Option<CabinetIr>>>,
+    /// Latest visualization snapshot. Published by the DSP worker with `try_lock`.
+    visualization: Arc<Mutex<Option<VisualizationFrame>>>,
+    /// Scope open + power on. Gates all visualization work on the worker.
+    visualization_enabled: Arc<AtomicBool>,
 }
 
 impl AudioEngine {
@@ -166,6 +178,8 @@ impl AudioEngine {
             active_output_device: None,
             health: Arc::new(AudioHealth::new()),
             ir: Arc::new(Mutex::new(None)),
+            visualization: Arc::new(Mutex::new(None)),
+            visualization_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -335,6 +349,8 @@ impl AudioEngine {
             state.tuner_level_db = -120.0;
         }
         self.health.reset();
+        // Drop any stale Scope frame so the display returns to idle on restart.
+        *self.visualization.lock() = None;
         {
             let mut mm = self.model_manager.lock();
             mm.clear_fade();
@@ -370,6 +386,8 @@ impl AudioEngine {
         let model_manager = Arc::clone(&self.model_manager);
         let state = Arc::clone(&self.state);
         let ir = Arc::clone(&self.ir);
+        let visualization = Arc::clone(&self.visualization);
+        let visualization_enabled = Arc::clone(&self.visualization_enabled);
         let sample_rate = output_sample_rate as f32;
 
         // Input callback: take the first channel (mono guitar input) and push it to
@@ -400,6 +418,8 @@ impl AudioEngine {
                 let mut eq_middle = f32::NAN;
                 let mut eq_treble = f32::NAN;
                 let mut eq_presence = f32::NAN;
+                // Room reverb; allocated once per stream like the EQ and tuner.
+                let mut reverb = Reverb::new(sample_rate);
                 // DC/sub-bass blocker at the output stage. A one-pole high-pass at
                 // 65Hz removes DC offsets, string-handling rumble and IR low-end
                 // drift before the limiter without thinning the guitar's low E.
@@ -415,6 +435,10 @@ impl AudioEngine {
                 let mut gate_env = 0.0_f32;
                 let mut gate_gain = 1.0_f32;
                 let mut tuner = Tuner::new(sample_rate);
+                // Visualization is a read-only tap on the final output; all of its
+                // work happens after the block is handed to the output ring.
+                let mut visualizer = Visualizer::new(sample_rate);
+                let mut was_enabled = false;
 
                 while !stop_flag.load(Ordering::Relaxed) {
                     if raw_consumer.occupied_len() == 0 {
@@ -442,6 +466,7 @@ impl AudioEngine {
                         gate_threshold_db,
                         gate_decay_ms,
                         ir_mix,
+                        reverb_mix,
                     ) = {
                         let s = state.lock();
                         (
@@ -455,6 +480,7 @@ impl AudioEngine {
                             s.gate_threshold_db,
                             s.gate_decay_ms,
                             s.ir_mix,
+                            s.reverb,
                         )
                     };
 
@@ -549,6 +575,10 @@ impl AudioEngine {
                     // Amp tone stack approximation (bass / middle / treble / presence).
                     eq.process(&mut buffer[..got]);
 
+                    // Room reverb on the final amp tone, before gain staging and the
+                    // limiter. Mix is smoothed inside Reverb, and zero is a true bypass.
+                    reverb.process_buffer(&mut buffer[..got], reverb_mix * REVERB_MAX_WET);
+
                     if gain.is_nan() {
                         gain = total_gain;
                     }
@@ -563,6 +593,27 @@ impl AudioEngine {
                     }
 
                     out_producer.push_slice(&buffer[..got]);
+
+                    // The block is already in the output ring: visualization work
+                    // from here on cannot delay samples reaching the device.
+                    let enabled = visualization_enabled.load(Ordering::Relaxed);
+                    if enabled != was_enabled {
+                        was_enabled = enabled;
+                        if enabled {
+                            visualizer.prepare(sample_rate);
+                        } else {
+                            *visualization.lock() = None;
+                        }
+                    }
+                    if enabled {
+                        if let Some(frame) = visualizer.push(&buffer[..got]) {
+                            // Never block the audio thread on the UI: drop this
+                            // frame if the polling command holds the lock.
+                            if let Some(mut guard) = visualization.try_lock() {
+                                *guard = Some(frame);
+                            }
+                        }
+                    }
                 }
             })
             .map_err(|e| format!("Failed to spawn DSP thread: {}", e))?;
@@ -668,6 +719,7 @@ impl AudioEngine {
             let mut state = self.state.lock();
             state.powered = false;
         }
+        *self.visualization.lock() = None;
         log::info!("Audio engine stopped");
     }
 
@@ -742,6 +794,14 @@ impl AudioEngine {
         log::info!("Cabinet IR mix set to {}", value);
     }
 
+    pub fn set_reverb(&self, value: f32) {
+        {
+            let mut state = self.state.lock();
+            state.reverb = value.clamp(0.0, 1.0);
+        }
+        log::info!("Reverb mix set to {}", value);
+    }
+
     /// Load a cabinet impulse response from disk. Parsing/resampling happens
     /// before the IR lock is taken so the DSP thread is not blocked.
     pub fn load_ir(&self, path: &str) -> Result<String, String> {
@@ -783,6 +843,19 @@ impl AudioEngine {
     pub fn tuner(&self) -> (f32, f32) {
         let state = self.state.lock();
         (state.tuner_hz, state.tuner_level_db)
+    }
+
+    /// Latest visualization snapshot, or `None` while disabled / powered off.
+    pub fn visualization(&self) -> Option<VisualizationFrame> {
+        self.visualization.lock().clone()
+    }
+
+    /// Enable or disable the Scope's DSP work. Never restarts the streams.
+    pub fn set_visualization_enabled(&self, enabled: bool) {
+        self.visualization_enabled.store(enabled, Ordering::Relaxed);
+        if !enabled {
+            *self.visualization.lock() = None;
+        }
     }
 
     /// Set the DSP pipeline latency. Takes effect immediately by restarting the
