@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
+  AssetKind,
+  AssetMeta,
   AssetRef,
   PresetMeta,
   PresetPayload,
@@ -184,9 +186,67 @@ export async function loadRigAssets(rig: RigSnapshot): Promise<void> {
   return invoke('load_rig_assets', { rig });
 }
 
+// --- Asset library --------------------------------------------------------
+
+/** All stored NAM/IR files with metadata and the presets that reference them. */
+export async function listAssets(): Promise<AssetMeta[]> {
+  return invoke('list_assets');
+}
+
+/** Store a copy without changing the live sound (Library import). */
+export async function storeAsset(
+  kind: AssetKind,
+  filename: string,
+  path?: string,
+  data?: string,
+): Promise<AssetRef> {
+  return invoke('store_asset_file', {
+    kind,
+    filename,
+    path: path ?? null,
+    data: data ?? null,
+  });
+}
+
+/** Load a stored NAM/IR into the engine. */
+export async function loadAsset(id: string): Promise<AssetRef> {
+  return invoke('load_asset', { id });
+}
+
+/** Copy a stored asset to a user-chosen path. */
+export async function exportAssetToPath(id: string, path: string): Promise<void> {
+  return invoke('export_asset_to_path', { id, path });
+}
+
+/** Delete a stored asset; returns the preset names affected by a forced delete. */
+export async function deleteAsset(id: string, force = false): Promise<string[]> {
+  return invoke('delete_asset', { id, force });
+}
+
+export interface RenameAssetResult {
+  asset: AssetRef;
+  /** Presets whose references were updated to the new id. */
+  affected: string[];
+}
+
+/** Rename a stored asset and update every preset that referenced it. */
+export async function renameAsset(id: string, newName: string): Promise<RenameAssetResult> {
+  return invoke('rename_asset', { id, newName });
+}
+
+/** Remove assets that no preset uses; `keep` holds ids loaded in the live rig. */
+export async function cleanLibrary(keep: string[]): Promise<string[]> {
+  return invoke('clean_library', { keep });
+}
+
 /** Read-only preset payload (no engine side effects). */
 export async function getPreset(name: string): Promise<PresetPayload> {
   return invoke('get_preset', { name });
+}
+
+/** Assets already stored in the local library, for preset-editor pickers. */
+export async function listLibraryAssets(kind: 'nam' | 'ir'): Promise<AssetRef[]> {
+  return invoke('list_library_assets', { kind });
 }
 
 /** Relocate a preset to another bank/slot, replacing the occupant if allowed. */

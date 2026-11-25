@@ -4,12 +4,25 @@ export type Bank = 'A' | 'B' | 'C' | 'D';
 export const BANKS: Bank[] = ['A', 'B', 'C', 'D'];
 export const SLOTS = [1, 2, 3, 4];
 
+/** A NAM model or a cabinet IR. */
+export type AssetKind = 'nam' | 'ir';
+
 /** A NAM or IR file stored in the backend's local asset library. */
 export interface AssetRef {
-  /** Relative id inside app_data/library, e.g. "nams/ab12cd34/JCM800.nam". */
+  /** Relative id inside app_data/library, e.g. "nam/ab12cd34/JCM800.nam". */
   id: string;
   /** Display name, e.g. "JCM800.nam". */
   name: string;
+}
+
+/** One row in the asset library view. */
+export interface AssetMeta extends AssetRef {
+  kind: AssetKind;
+  size: number;
+  /** Epoch milliseconds of the last modification. */
+  modified: number;
+  /** Preset names whose rig references this asset. */
+  usedBy: string[];
 }
 
 /**

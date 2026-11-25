@@ -1,18 +1,21 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useRigState } from './hooks/useRigState';
 import { usePresetManager } from './hooks/usePresetManager';
 import { useAudioStatus } from './hooks/useAudioStatus';
+import { useAssetLibrary } from './hooks/useAssetLibrary';
 import { useMeters } from './hooks/useMeters';
 import { useDialogFocus } from './hooks/useDialogFocus';
 import AmpPanel from './components/AmpPanel';
+import LibraryIcon from './components/LibraryIcon';
 import SettingsIcon from './components/SettingsIcon';
 import TunerIcon from './components/TunerIcon';
 import SettingsPanel from './components/SettingsPanel';
 import Tuner from './components/Tuner';
 import AudioStatusBar from './components/AudioStatusBar';
 import Toast from './components/Toast';
-import PresetLibrary from './components/PresetLibrary';
+import AssetLibrary from './components/AssetLibrary';
+import type { AssetMeta, Bank } from './types/preset';
 import { importAsset, importPreset, importPresetFromPath, logToTerminal } from './tauri';
 import { notifyError, notifySuccess } from './notifications';
 import './App.css';
@@ -35,9 +38,8 @@ function log(...args: unknown[]) {
 function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTuner, setShowTuner] = useState(false);
-  // The library is a full-window view, not an overlay.
-  const [view, setView] = useState<'amp' | 'library'>('amp');
-  const [librarySelection, setLibrarySelection] = useState<string | null>(null);
+  // Library and tuner are full-window views, not overlays.
+  const [assetSelection, setAssetSelection] = useState<string | null>(null);
 
   // Drag-and-drop state for unnamed mode
   const [dragOver, setDragOver] = useState(false);
@@ -52,10 +54,11 @@ function App() {
   const closeSettings = () => setShowSettings(false);
   const closeTuner = () => setShowTuner(false);
   const openLibrary = () => setView('library');
-  const backToAmp = useCallback(() => {
+  const backToAmp = useCallback((from: 'library' | 'tuner' = 'library') => {
     setView('amp');
     requestAnimationFrame(() => {
-      document.querySelector<HTMLButtonElement>('[data-preset-library-trigger]')?.focus();
+      const trigger = from === 'tuner' ? '[data-tuner-trigger]' : '[data-library-trigger]';
+      document.querySelector<HTMLButtonElement>(trigger)?.focus();
     });
   }, []);
   const openTuner = () => setShowTuner(true);
@@ -78,6 +81,29 @@ function App() {
   } = rig;
   const audioStatus = useAudioStatus();
   const meters = useMeters(view === 'amp' && settings.powerOn);
+  const assetLibrary = useAssetLibrary(rig);
+  const { refresh: refreshAssets } = assetLibrary;
+
+  const handleCleanup = useCallback(() => {
+    const keep = [rig.model?.id, rig.ir?.id].filter((id): id is string => !!id);
+    const unused = assetLibrary.assets.filter(
+      (asset) => asset.usedBy.length === 0 && !keep.includes(asset.id),
+    );
+    if (unused.length === 0) {
+      notifySuccess('Nothing to clean up');
+      return;
+    }
+    if (!window.confirm(`Delete ${unused.length} unused file(s)?\n${unused.map((a) => a.name).join('\n')}`)) {
+      return;
+    }
+    void assetLibrary.cleanup(keep);
+  }, [assetLibrary, rig.model, rig.ir]);
+
+  /** Asset previews and preset auditions share one banner, so never overlap them. */
+  const handlePreviewAsset = useCallback((asset: AssetMeta) => {
+    if (presetManager.preview) presetManager.commitPreview();
+    void assetLibrary.previewAsset(asset);
+  }, [presetManager, assetLibrary]);
 
   /** Extract the file name from a path reported by Tauri's native drop event. */
   const fileNameFromPath = (path: string) =>
@@ -99,12 +125,9 @@ function App() {
       } else if (ext === 'wav') {
         const asset = await importAsset('ir', filename, path);
         setIr(asset);
+        void refreshAssets();
         log('[IMPORT] IR loaded:', asset.name);
       } else if (ext === 'json') {
-        if (view !== 'library') {
-          notifyError('Open the Library to import a preset file.');
-          return;
-        }
         await importPresetFromPath(path);
         await refreshPresets();
         notifySuccess('Preset imported');
@@ -115,7 +138,7 @@ function App() {
       log('[IMPORT] file load FAILED', err);
       notifyError(`Could not load file: ${err}`);
     }
-  }, [setIr, view, refreshPresets]);
+  }, [setIr, refreshPresets, refreshAssets]);
 
   /** Confirm and load the pending NAM file. */
   const handleConfirmLoadNam = async () => {
@@ -125,6 +148,7 @@ function App() {
     try {
       const asset = await importAsset('nam', pending.filename, pending.path);
       setModel(asset);
+      void refreshAssets();
       log('[IMPORT] NAM loaded:', asset.name);
     } catch (err) {
       log('[IMPORT] NAM load FAILED', err);
@@ -144,10 +168,11 @@ function App() {
   useDialogFocus(showTuner, closeTuner, tunerPopupRef);
   useDialogFocus(!!pendingNam, handleCancelLoadNam, confirmDialogRef);
 
-  // Key precedence: Esc reverts an audition, otherwise leaves the library view.
-  // Enter keeps an audition, otherwise auditions the selected library preset.
+  // Key precedence: Esc reverts an audition, otherwise leaves the current view.
+  // Enter keeps an audition, otherwise previews the selected asset.
   // Dialogs and menus keep their own Escape handling while they are open.
-  const { preview: presetPreview, commitPreview, revertPreview, metas, recallAt } = presetManager;
+  const { preview: presetPreview, commitPreview, revertPreview } = presetManager;
+  const { preview: assetPreview } = assetLibrary;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (document.querySelector('[role="dialog"], [role="menu"]')) return;
@@ -155,10 +180,24 @@ function App() {
       if (event.key === 'Escape') {
         event.preventDefault();
         if (presetPreview) void revertPreview();
-        else if (view === 'library') backToAmp();
+        else if (assetPreview) void assetLibrary.revertPreview();
+        else if (view !== 'amp') backToAmp(view === 'tuner' ? 'tuner' : 'library');
+        return;
         return;
       }
       if (event.key !== 'Enter') return;
+      // Keep/revert always wins: after clicking a slot the button keeps focus,
+      // so a focused-control bail-out here would re-recall instead of keeping.
+      if (presetPreview) {
+        event.preventDefault();
+        commitPreview();
+        return;
+      }
+      if (assetPreview) {
+        event.preventDefault();
+        assetLibrary.commitPreview();
+        return;
+      }
       // Let a focused control perform its own default action.
       if (
         target &&
@@ -167,20 +206,20 @@ function App() {
       ) {
         return;
       }
-      if (presetPreview) {
-        event.preventDefault();
-        commitPreview();
-      } else if (view === 'library' && librarySelection) {
-        const meta = metas.find((item) => item.name === librarySelection);
-        if (meta) {
+      if (view === 'library' && assetSelection) {
+        const asset = assetLibrary.assets.find((item) => item.id === assetSelection);
+        if (asset) {
           event.preventDefault();
-          void recallAt(meta.bank, meta.slot);
+          handlePreviewAsset(asset);
         }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [presetPreview, commitPreview, revertPreview, view, librarySelection, metas, recallAt, backToAmp]);
+  }, [
+    presetPreview, commitPreview, revertPreview, assetPreview, view, assetSelection,
+    assetLibrary, handlePreviewAsset, backToAmp, presetManager.busy, presetManagerForAmp,
+  ]);
 
   // Native drag-and-drop: browsers' onDrop does not fire for OS file drops in
   // the Tauri webview, so listen to the webview event which carries file paths.
@@ -269,14 +308,12 @@ function App() {
           if (ext === 'nam') {
             const asset = await importAsset('nam', file.name, undefined, base64);
             setModel(asset);
+            void refreshAssets();
           } else if (ext === 'wav') {
             const asset = await importAsset('ir', file.name, undefined, base64);
             setIr(asset);
+            void refreshAssets();
           } else if (ext === 'json') {
-            if (view !== 'library') {
-              notifyError('Open the Library to import a preset file.');
-              return;
-            }
             const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
             const json = new TextDecoder().decode(bytes);
             await importPreset(json);
@@ -291,7 +328,7 @@ function App() {
       };
       reader.readAsDataURL(file);
     }
-  }, [setModel, setIr, view, refreshPresets]);
+  }, [setModel, setIr, refreshPresets, refreshAssets]);
 
   return (
     <div
@@ -305,16 +342,32 @@ function App() {
         <SettingsIcon onClick={() => setShowSettings(true)} />
         <TunerIcon onClick={openTuner} />
       </div>
+      {/* Full-window views own the whole faceplate; the floating tools would sit
+          on top of their headers, so only show them on the amp view. */}
+      {view === 'amp' && (
+        <div className="window-tools">
+          <TunerIcon onClick={openTuner} />
+          <LibraryIcon onClick={openLibrary} />
+          <SettingsIcon onClick={() => setShowSettings(true)} />
+        </div>
+      )}
       <AudioStatusBar status={audioStatus} />
       <Toast />
-      {presetManager.preview && (
+      {(presetManager.preview || assetPreview) && (
         <div className="preview-banner" role="status">
           <span>
-            Previewing <strong>{presetManager.preview.activeName ?? 'bypass'}</strong>
+            Previewing <strong>{presetManager.preview?.activeName ?? assetLibrary.previewName ?? 'bypass'}</strong>
             <span className="preview-banner-hint"> · Enter to keep · Esc to revert</span>
           </span>
-          <button type="button" onClick={presetManager.commitPreview}>Keep</button>
-          <button type="button" onClick={() => void presetManager.revertPreview()}>Revert</button>
+          <button type="button" onClick={presetManager.preview ? presetManager.commitPreview : assetLibrary.commitPreview}>
+            Keep
+          </button>
+          <button type="button" onClick={() => {
+            if (presetManager.preview) void presetManager.revertPreview();
+            else void assetLibrary.revertPreview();
+          }}>
+            Revert
+          </button>
         </div>
       )}
       <SettingsPanel open={showSettings} onClose={closeSettings} />
@@ -341,7 +394,7 @@ function App() {
         <div className="drop-zone-overlay">
           <div className="drop-zone-content">
             <span className="drop-zone-icon" aria-hidden="true">🎸</span>
-            <p>{view === 'library' ? 'Drop a preset JSON, NAM or IR file' : 'Drop NAM or IR file to load'}</p>
+            <p>Drop a NAM model, IR or preset JSON file</p>
           </div>
         </div>
       )}
@@ -373,13 +426,23 @@ function App() {
           </div>
         </div>
       )}
-      <div className="app-content">
-        {view === 'library' ? (
-          <PresetLibrary
-            manager={presetManager}
-            onBack={backToAmp}
-            selected={librarySelection}
-            onSelect={setLibrarySelection}
+        ) : view === 'library' ? (
+          <AssetLibrary
+            assets={assetLibrary.assets}
+            model={rig.model}
+            ir={rig.ir}
+            previewId={assetLibrary.previewId}
+            busy={assetLibrary.busy}
+            selected={assetSelection}
+            onSelect={setAssetSelection}
+            onBack={() => backToAmp('library')}
+            onPreview={handlePreviewAsset}
+            onLoad={(asset) => void assetLibrary.load(asset)}
+            onStore={(kind, filename, path, data) => void assetLibrary.store(kind, filename, path, data)}
+            onExport={(asset, path) => void assetLibrary.exportAsset(asset, path)}
+            onDelete={(asset, force) => void assetLibrary.remove(asset, force)}
+            onRename={(asset, newName) => assetLibrary.rename(asset, newName)}
+            onCleanup={handleCleanup}
           />
         ) : (
           <AmpPanel

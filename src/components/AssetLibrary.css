@@ -1,18 +1,13 @@
 /* Full-window library view: occupies .app-content instead of floating as a modal. */
-.preset-library {
+.asset-library {
   display: flex;
   flex-direction: column;
   width: 100%;
   height: 100%;
   min-height: 0;
-  background: linear-gradient(180deg, #1c1c1c 0%, var(--bg-panel) 55%, #0e0e0e 100%);
-  border: 1px solid var(--gold-line);
-  border-radius: 8px;
-  box-shadow: 0 4px 28px rgba(0, 0, 0, 0.6);
-  overflow: hidden;
 }
 
-.preset-library-header {
+.asset-library-header {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -21,7 +16,7 @@
   background: rgba(0, 0, 0, 0.3);
 }
 
-.preset-library-header h2 {
+.asset-library-header h2 {
   margin: 0;
   color: var(--gold);
   font-size: 1rem;
@@ -30,8 +25,8 @@
   white-space: nowrap;
 }
 
-.preset-library-header button,
-.preset-library-filters button {
+.asset-library-header button,
+.asset-library-filters button {
   padding: 6px 10px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid var(--gold-line);
@@ -43,17 +38,15 @@
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
-.preset-library-header button:hover,
-.preset-library-filters button:hover {
+.asset-library-header button:hover,
+.asset-library-filters button:hover {
   color: var(--gold-bright);
   border-color: rgba(212, 175, 55, 0.55);
 }
 
-.preset-library-back {
-  white-space: nowrap;
-}
+/* .back-btn from App.css supplies the shared chrome. */
 
-.preset-library-search {
+.asset-library-search {
   flex: 1;
   min-width: 140px;
   max-width: 280px;
@@ -66,29 +59,30 @@
   font-size: 0.8rem;
 }
 
-.preset-library-search:focus {
-  outline: none;
+.asset-library-search:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
   border-color: rgba(212, 175, 55, 0.75);
 }
 
-.preset-library-filters {
+.asset-library-filters {
   display: flex;
   gap: 3px;
 }
 
-.preset-library-filters button.active {
+.asset-library-filters button.active {
   background: var(--gold-soft);
   border-color: rgba(212, 175, 55, 0.65);
   color: var(--gold-bright);
 }
 
-.preset-library-body {
+.asset-library-body {
   display: flex;
   flex: 1;
   min-height: 0;
 }
 
-.preset-library-list {
+.asset-library-list {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
@@ -96,15 +90,15 @@
   border-right: 1px solid var(--gold-soft);
 }
 
-.preset-library-list-head,
-.preset-library-row {
+.asset-library-list-head,
+.asset-library-row {
   display: grid;
-  grid-template-columns: 52px minmax(130px, 1.4fr) minmax(110px, 1fr) minmax(100px, 1fr) 88px;
+  grid-template-columns: minmax(180px, 1.6fr) 72px 80px 100px 80px;
   gap: 0.5rem;
   align-items: center;
 }
 
-.preset-library-list-head {
+.asset-library-list-head {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -112,7 +106,13 @@
   background: #161616;
 }
 
-.preset-library-list-head button {
+.asset-library-list-head [role='columnheader'] {
+  display: flex;
+  min-width: 0;
+}
+
+.asset-library-list-head button {
+  width: 100%;
   padding: 2px 0;
   text-align: left;
   background: transparent;
@@ -126,11 +126,11 @@
   cursor: pointer;
 }
 
-.preset-library-list-head button:hover {
+.asset-library-list-head button:hover {
   color: var(--gold-bright);
 }
 
-.preset-library-row {
+.asset-library-row {
   width: 100%;
   margin-bottom: 4px;
   padding: 0.5rem 0.7rem;
@@ -144,32 +144,42 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
-.preset-library-row:hover {
+.asset-library-row:hover {
   border-color: rgba(212, 175, 55, 0.45);
   background: rgba(212, 175, 55, 0.06);
 }
 
-.preset-library-row.selected {
+.asset-library-row.selected {
   border-color: rgba(212, 175, 55, 0.8);
   background: rgba(212, 175, 55, 0.12);
 }
 
-.preset-library-slot {
+.asset-library-kind {
+  justify-self: start;
+  padding: 1px 5px;
+  border: 1px solid var(--gold-line);
+  border-radius: 999px;
   color: var(--gold);
-  font-size: 0.8rem;
+  font-size: 0.55rem;
   font-weight: 700;
+  letter-spacing: 0.06em;
 }
 
-.preset-library-name,
-.preset-library-model,
-.preset-library-ir,
-.preset-library-updated {
+.asset-library-kind.ir {
+  border-color: rgba(111, 221, 139, 0.4);
+  color: var(--ok);
+}
+
+.asset-library-name,
+.asset-library-size,
+.asset-library-added,
+.asset-library-used-count {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.preset-library-name {
+.asset-library-name {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -178,13 +188,13 @@
   font-weight: 600;
 }
 
-.preset-library-name-text {
+.asset-library-name-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.preset-library-badge {
+.asset-library-badge {
   flex-shrink: 0;
   padding: 1px 5px;
   border: 1px solid rgba(212, 175, 55, 0.4);
@@ -195,37 +205,37 @@
   letter-spacing: 0.06em;
 }
 
-.preset-library-badge.preview {
+.asset-library-badge.preview {
   border-color: rgba(212, 175, 55, 0.8);
   background: rgba(212, 175, 55, 0.2);
 }
 
-.preset-library-row.loaded {
+.asset-library-row.loaded {
   border-left: 2px solid var(--gold);
 }
 
-.preset-library-row.previewing {
+.asset-library-row.previewing {
   background: rgba(212, 175, 55, 0.16);
 }
 
-.preset-library-status {
+.asset-library-status {
   margin-top: 4px;
   color: var(--gold);
   font-weight: 700;
 }
 
-.preset-library-status.preview {
+.asset-library-status.preview {
   color: var(--gold-bright);
 }
 
-.preset-library-model,
-.preset-library-ir,
-.preset-library-updated {
+.asset-library-size,
+.asset-library-added,
+.asset-library-used-count {
   color: var(--text-muted);
   font-size: 0.7rem;
 }
 
-.preset-library-side {
+.asset-library-side {
   width: 290px;
   flex-shrink: 0;
   padding: 0.75rem;
@@ -235,7 +245,7 @@
   overflow-y: auto;
 }
 
-.preset-library-info {
+.asset-library-info {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -249,20 +259,40 @@
   overflow-wrap: anywhere;
 }
 
-.preset-library-info strong {
+.asset-library-info-name {
   color: var(--gold-bright);
   font-size: 0.85rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
-.preset-library-side label {
-  color: #a89b80;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+.asset-library-info dl {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.preset-library-side input,
-.preset-library-side select {
+.asset-library-info dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.asset-library-info dt {
+  color: var(--text-dim);
+}
+
+.asset-library-info dd {
+  color: var(--text);
+  text-align: right;
+}
+
+.asset-library-used {
+  margin-top: 2px;
+  color: var(--text);
+}
+
+.asset-library-side input {
   padding: 6px 8px;
   background: rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(212, 175, 55, 0.3);
@@ -272,7 +302,7 @@
   font-size: 0.8rem;
 }
 
-.preset-library-side button {
+.asset-library-side button {
   padding: 6px 10px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(212, 175, 55, 0.25);
@@ -283,51 +313,53 @@
   cursor: pointer;
 }
 
-.preset-library-side button:hover:not(:disabled) {
+.asset-library-side button:hover:not(:disabled) {
   border-color: rgba(212, 175, 55, 0.6);
   color: var(--gold-bright);
 }
 
-.preset-library-side button:disabled {
+.asset-library-side button:disabled {
   opacity: 0.55;
   cursor: wait;
 }
 
-.preset-library-side button.danger {
+.asset-library-side button.danger {
   color: var(--danger);
 }
 
-.preset-library-place {
+.asset-library-rename {
   display: flex;
   gap: 6px;
 }
 
-.preset-library-place select {
+.asset-library-rename input {
   flex: 1;
   min-width: 0;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.8rem;
 }
 
-.preset-library-place-actions {
-  display: flex;
-  gap: 6px;
+.asset-library-rename button {
+  flex-shrink: 0;
 }
 
-.preset-library-place-actions button {
-  flex: 1;
-}
-
-.preset-library-footer {
+.asset-library-footer {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 1rem var(--chrome-reserve-bottom);
   border-top: 1px solid var(--gold-soft);
   background: rgba(0, 0, 0, 0.3);
   color: var(--text-muted);
   font-size: 0.68rem;
 }
 
-.preset-library-empty {
+.asset-library-empty {
   color: var(--text-muted);
   font-size: 0.8rem;
   text-align: center;

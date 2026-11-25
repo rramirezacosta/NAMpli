@@ -2,6 +2,7 @@ use crate::audio_engine::{AudioEngine, AudioStatus};
 use crate::level_meter::MeterSnapshot;
 use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -350,10 +351,37 @@ pub fn set_buffer_size(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetRef {
-    /// Relative path inside app_data/library, e.g. "nams/ab12cd34/JCM800.nam".
+    /// Relative path inside app_data/library, e.g. "nam/ab12cd34/JCM800.nam".
     pub id: String,
     /// Display name, e.g. "JCM800.nam".
     pub name: String,
+}
+
+/// One row in the asset library view: the stored file plus how much disk it
+/// uses and which presets reference it.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetMeta {
+    pub id: String,
+    pub name: String,
+    pub kind: String,
+    pub size: u64,
+    /// Epoch milliseconds of the last modification.
+    pub modified: u64,
+    /// Names of the presets whose rig references this asset id.
+    pub used_by: Vec<String>,
+}
+
+/// Older presets used `nams/` and `irs/`; current ids use `nam/` and `ir/`.
+/// Normalise both forms so reference counting still finds legacy files.
+fn canonical_asset_id(id: &str) -> String {
+    if let Some(rest) = id.strip_prefix("nams/") {
+        format!("nam/{rest}")
+    } else if let Some(rest) = id.strip_prefix("irs/") {
+        format!("ir/{rest}")
+    } else {
+        id.to_string()
+    }
 }
 
 fn default_knob() -> f32 {
@@ -946,6 +974,352 @@ fn hex_encode(bytes: &[u8]) -> String {
     out
 }
 
+/// Walk <library>/<kind>/<hash>/<file> and rebuild the ids used by store_asset.
+fn asset_refs_in_dir(root: &Path, kind: &str) -> Result<Vec<AssetRef>, String> {
+    let extension = if kind == "nam" { "nam" } else { "wav" };
+    let mut assets = Vec::new();
+    let dirs = match std::fs::read_dir(root) {
+        Ok(dirs) => dirs,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(assets),
+        Err(err) => return Err(format!("Could not read asset library: {}", err)),
+    };
+    for dir in dirs {
+        let dir = dir.map_err(|e| format!("Could not read asset library: {}", e))?;
+        if !dir.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let hash = dir.file_name().to_string_lossy().to_string();
+        let files = std::fs::read_dir(dir.path())
+            .map_err(|e| format!("Could not read asset folder '{}': {}", hash, e))?;
+        for file in files {
+            let file = file.map_err(|e| format!("Could not read asset folder '{}': {}", hash, e))?;
+            if !file.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                continue;
+            }
+            let name = file.file_name().to_string_lossy().to_string();
+            if Path::new(&name)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_none_or(|ext| !ext.eq_ignore_ascii_case(extension))
+            {
+                continue;
+            }
+            assets.push(AssetRef {
+                id: format!("{}/{}/{}", kind, hash, name),
+                name,
+            });
+        }
+    }
+    assets.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
+    Ok(assets)
+}
+
+/// Assets available to the preset editor's NAM/IR pickers (no engine side effects).
+#[tauri::command]
+pub fn list_library_assets(app: AppHandle, kind: String) -> Result<Vec<AssetRef>, String> {
+    if !matches!(kind.as_str(), "nam" | "ir") {
+        return Err(format!("Unknown asset kind '{}'", kind));
+    }
+    asset_refs_in_dir(&library_dir(&app, &kind)?, &kind)
+}
+
+/// Map canonical asset ids to the preset names that reference them.
+fn usage_from_presets(dir: &Path) -> Result<HashMap<String, Vec<String>>, String> {
+    let mut usage: HashMap<String, Vec<String>> = HashMap::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(usage),
+        Err(err) => return Err(format!("Could not read presets: {}", err)),
+    };
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Could not read preset: {}", e))?;
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(name) = path.file_stem().and_then(|s| s.to_str()).map(str::to_string) else {
+            continue;
+        };
+        if name == "index" {
+            continue;
+        }
+        let raw = match std::fs::read_to_string(&path) {
+            Ok(raw) => raw,
+            Err(_) => continue,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&raw) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if let Some(rig) = value.get("rig") {
+            for key in ["model", "ir"] {
+                if let Some(id) = rig.get(key).and_then(|v| v.get("id")).and_then(|v| v.as_str()) {
+                    usage.entry(canonical_asset_id(id)).or_default().push(name.clone());
+                }
+            }
+        }
+    }
+    Ok(usage)
+}
+
+fn preset_asset_usage(app: &AppHandle) -> Result<HashMap<String, Vec<String>>, String> {
+    usage_from_presets(&presets_dir(app)?)
+}
+
+/// Full asset list for the Library view, including file metadata and usage.
+#[tauri::command]
+pub fn list_assets(app: AppHandle) -> Result<Vec<AssetMeta>, String> {
+    let usage = preset_asset_usage(&app)?;
+    let mut out = Vec::new();
+    for kind in ["nam", "ir"] {
+        let dir = library_dir(&app, kind)?;
+        for asset in asset_refs_in_dir(&dir, kind)? {
+            let path = resolve_asset_path(&app, &asset.id)?;
+            let meta = std::fs::metadata(&path)
+                .map_err(|e| format!("Could not stat asset '{}': {}", asset.id, e))?;
+            let modified = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            out.push(AssetMeta {
+                id: asset.id.clone(),
+                name: asset.name,
+                kind: kind.to_string(),
+                size: meta.len(),
+                modified,
+                used_by: usage.get(&asset.id).cloned().unwrap_or_default(),
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn asset_bytes(path: Option<String>, data: Option<String>) -> Result<Vec<u8>, String> {
+    use base64::engine::general_purpose::STANDARD as BASE64;
+    use base64::Engine;
+
+    if let Some(path) = path {
+        std::fs::read(&path).map_err(|e| format!("Could not read '{}': {}", path, e))
+    } else if let Some(data) = data {
+        BASE64.decode(&data).map_err(|e| format!("Invalid base64 data: {}", e))
+    } else {
+        Err("No file path or data supplied".into())
+    }
+}
+
+/// Store a copy of a NAM/IR in the library *without* loading it into the engine.
+#[tauri::command]
+pub fn store_asset_file(
+    app: AppHandle,
+    kind: String,
+    filename: String,
+    path: Option<String>,
+    data: Option<String>,
+) -> Result<AssetRef, String> {
+    if !matches!(kind.as_str(), "nam" | "ir") {
+        return Err(format!("Unsupported asset kind '{}'", kind));
+    }
+    store_asset(&app, &kind, &filename, &asset_bytes(path, data)?)
+}
+
+/// Load a stored asset into the engine, without copying or touching presets.
+#[tauri::command]
+pub fn load_asset(
+    app: AppHandle,
+    engine: State<'_, StdMutex<AudioEngine>>,
+    id: String,
+) -> Result<AssetRef, String> {
+    let path = resolve_asset_path(&app, &id)?;
+    let kind = id.split('/').next().unwrap_or_default();
+    let name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| format!("Invalid asset name in '{}'", id))?
+        .to_string();
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    if kind == "nam" {
+        let bytes = std::fs::read(&path)
+            .map_err(|e| format!("Could not read model '{}': {}", id, e))?;
+        engine.load_nam_from_bytes(&name, bytes)?;
+    } else if kind == "ir" {
+        engine.load_ir(&path.to_string_lossy())?;
+    } else {
+        return Err(format!("Unknown asset kind in '{}'", id));
+    }
+    Ok(AssetRef { id, name })
+}
+
+/// Copy a stored asset to a user-chosen path (raw NAM/WAV bytes).
+#[tauri::command]
+pub fn export_asset_to_path(app: AppHandle, id: String, path: String) -> Result<(), String> {
+    let src = resolve_asset_path(&app, &id)?;
+    std::fs::copy(&src, &path).map_err(|e| format!("Could not export asset: {}", e))?;
+    Ok(())
+}
+
+/// Replace (or clear) references to `old_id` in every preset using it.
+fn rewrite_preset_asset_refs(
+    app: &AppHandle,
+    old_id: &str,
+    replacement: Option<&AssetRef>,
+) -> Result<Vec<String>, String> {
+    rewrite_refs_in_dir(&presets_dir(app)?, old_id, replacement)
+}
+
+fn rewrite_refs_in_dir(
+    dir: &Path,
+    old_id: &str,
+    replacement: Option<&AssetRef>,
+) -> Result<Vec<String>, String> {
+    let usage = usage_from_presets(dir)?;
+    let Some(users) = usage.get(&canonical_asset_id(old_id)) else {
+        return Ok(Vec::new());
+    };
+    let replacement = replacement
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|e| e.to_string())?;
+    for name in users {
+        let target = dir.join(format!("{}.json", sanitize_preset_name(name)));
+        let raw = std::fs::read_to_string(&target)
+            .map_err(|e| format!("Could not read preset '{}': {}", name, e))?;
+        let mut value: serde_json::Value = serde_json::from_str(&raw)
+            .map_err(|e| format!("Could not parse preset '{}': {}", name, e))?;
+        if let Some(rig) = value.get_mut("rig").and_then(|v| v.as_object_mut()) {
+            for key in ["model", "ir"] {
+                let matches = rig
+                    .get(key)
+                    .and_then(|v| v.get("id"))
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|other| canonical_asset_id(other) == canonical_asset_id(old_id));
+                if matches {
+                    let next = replacement
+                        .clone()
+                        .unwrap_or(serde_json::Value::Null);
+                    rig.insert(key.to_string(), next);
+                }
+            }
+        }
+        let raw = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+        std::fs::write(&target, raw)
+            .map_err(|e| format!("Could not update preset '{}': {}", name, e))?;
+    }
+    Ok(users.clone())
+}
+
+/// Remove an empty content-hash folder after deleting its last file.
+fn remove_empty_asset_folder(path: &Path) {
+    if let Some(parent) = path.parent() {
+        let empty = std::fs::read_dir(parent)
+            .map(|mut entries| entries.next().is_none())
+            .unwrap_or(false);
+        if empty {
+            let _ = std::fs::remove_dir(parent);
+        }
+    }
+}
+
+/// Delete a stored asset. Referenced assets are refused unless `force` is set;
+/// forcing strips the reference from every preset that uses it.
+#[tauri::command]
+pub fn delete_asset(app: AppHandle, id: String, force: Option<bool>) -> Result<Vec<String>, String> {
+    let path = resolve_asset_path(&app, &id)?;
+    let usage = preset_asset_usage(&app)?;
+    let users = usage.get(&canonical_asset_id(&id)).cloned().unwrap_or_default();
+    if !users.is_empty() && force != Some(true) {
+        return Err(format!("Used by presets: {}", users.join(", ")));
+    }
+    let affected = rewrite_preset_asset_refs(&app, &id, None)?;
+    std::fs::remove_file(&path).map_err(|e| format!("Could not delete asset: {}", e))?;
+    remove_empty_asset_folder(&path);
+    Ok(affected)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameAssetResult {
+    pub asset: AssetRef,
+    /// Presets whose asset reference was updated to the new id.
+    pub affected: Vec<String>,
+}
+
+/// Rename a stored asset and rewrite every preset that references it. The file
+/// stays in the same content-hash folder, so only the name (and therefore the
+/// id) changes; the frontend reloads the live rig from the returned ref.
+#[tauri::command]
+pub fn rename_asset(app: AppHandle, id: String, new_name: String) -> Result<RenameAssetResult, String> {
+    let old_path = resolve_asset_path(&app, &id)?;
+    let kind = id.split('/').next().unwrap_or_default();
+    if !matches!(kind, "nam" | "ir") {
+        return Err(format!("Unknown asset kind in '{}'", id));
+    }
+    let name = library_file_name(&new_name, kind);
+    let old_name = old_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_string();
+    if name == old_name {
+        return Ok(RenameAssetResult {
+            asset: AssetRef { id, name: old_name },
+            affected: Vec::new(),
+        });
+    }
+    let parent = old_path
+        .parent()
+        .ok_or_else(|| format!("Invalid asset path for '{}'", id))?;
+    let hash = parent
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| format!("Invalid asset folder for '{}'", id))?;
+    let new_path = parent.join(&name);
+    if new_path.exists() {
+        return Err(format!("An asset named '{}' already exists", name));
+    }
+    std::fs::rename(&old_path, &new_path)
+        .map_err(|e| format!("Could not rename asset: {}", e))?;
+    let new_id = format!("{}/{}/{}", kind, hash, name);
+    let asset = AssetRef {
+        id: new_id.clone(),
+        name: name.clone(),
+    };
+    let affected = match rewrite_preset_asset_refs(&app, &id, Some(&asset)) {
+        Ok(affected) => affected,
+        Err(err) => {
+            // Best-effort rollback: leave the file under its old name when the
+            // preset rewrite failed so references still resolve.
+            let _ = std::fs::rename(&new_path, &old_path);
+            return Err(err);
+        }
+    };
+    Ok(RenameAssetResult { asset, affected })
+}
+
+/// Remove unused assets from the library. `keep` holds ids currently loaded in
+/// the live rig, which may not be referenced by any preset yet.
+#[tauri::command]
+pub fn clean_library(app: AppHandle, keep: Vec<String>) -> Result<Vec<String>, String> {
+    let usage = preset_asset_usage(&app)?;
+    let keep: HashSet<String> = keep.into_iter().map(|id| canonical_asset_id(&id)).collect();
+    let mut removed = Vec::new();
+    for kind in ["nam", "ir"] {
+        let dir = library_dir(&app, kind)?;
+        for asset in asset_refs_in_dir(&dir, kind)? {
+            if usage.contains_key(&asset.id) || keep.contains(&asset.id) {
+                continue;
+            }
+            let path = resolve_asset_path(&app, &asset.id)?;
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Could not delete asset '{}': {}", asset.id, e))?;
+            remove_empty_asset_folder(&path);
+            removed.push(asset.name);
+        }
+    }
+    Ok(removed)
+}
+
 /// Store a copy of a dropped NAM/IR in the library and load it into the engine.
 #[tauri::command]
 pub fn import_asset(
@@ -956,20 +1330,10 @@ pub fn import_asset(
     path: Option<String>,
     data: Option<String>,
 ) -> Result<AssetRef, String> {
-    use base64::engine::general_purpose::STANDARD as BASE64;
-    use base64::Engine;
-
-    if kind != "nam" && kind != "ir" {
+    if !matches!(kind.as_str(), "nam" | "ir") {
         return Err(format!("Unsupported asset kind '{}'", kind));
     }
-    let bytes = if let Some(path) = path {
-        std::fs::read(&path).map_err(|e| format!("Could not read '{}': {}", path, e))?
-    } else if let Some(data) = data {
-        BASE64.decode(&data).map_err(|e| format!("Invalid base64 data: {}", e))?
-    } else {
-        return Err("No file path or data supplied".into());
-    };
-
+    let bytes = asset_bytes(path, data)?;
     let asset = store_asset(&app, &kind, &filename, &bytes)?;
     let stored = resolve_asset_path(&app, &asset.id)?;
     let stored = stored.to_string_lossy().to_string();
@@ -1149,5 +1513,78 @@ mod tests {
         assert_eq!(library_file_name("My Amp!.nam", "nam"), "My Amp.nam");
         assert_eq!(library_file_name("../../evil.wav", "ir"), "evil.wav");
         assert_eq!(hex_encode(&[0xab, 0x0c]), "ab0c");
+    }
+
+    #[test]
+    fn library_assets_keep_store_asset_ids() {
+        let root = std::env::temp_dir().join(format!("nampli-assets-test-{}", std::process::id()));
+        let folder = root.join("ab12cd34");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("JCM800.nam"), b"model").unwrap();
+        std::fs::write(folder.join("ignore.txt"), b"nope").unwrap();
+
+        let assets = asset_refs_in_dir(&root, "nam").unwrap();
+        assert_eq!(assets.len(), 1);
+        assert_eq!(assets[0].id, "nam/ab12cd34/JCM800.nam");
+        assert_eq!(assets[0].name, "JCM800.nam");
+
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn legacy_asset_ids_are_canonicalised() {
+        assert_eq!(canonical_asset_id("nams/abc/A.nam"), "nam/abc/A.nam");
+        assert_eq!(canonical_asset_id("irs/def/B.wav"), "ir/def/B.wav");
+        assert_eq!(canonical_asset_id("nam/abc/A.nam"), "nam/abc/A.nam");
+    }
+
+    #[test]
+    fn preset_usage_counts_legacy_and_current_asset_ids() {
+        let dir = std::env::temp_dir().join(format!(
+            "nampli-usage-test-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Crunch.json"),
+            r#"{"name":"Crunch","bank":"A","slot":1,"rig":{"model":{"id":"nams/abc/A.nam","name":"A.nam"},"ir":{"id":"ir/def/B.wav","name":"B.wav"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join("index.json"), "{}").unwrap();
+
+        let usage = usage_from_presets(&dir).unwrap();
+        assert_eq!(usage.get("nam/abc/A.nam").unwrap(), &["Crunch"]);
+        assert_eq!(usage.get("ir/def/B.wav").unwrap(), &["Crunch"]);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn renaming_an_asset_rewrites_preset_references() {
+        let dir = std::env::temp_dir().join(format!(
+            "nampli-rename-test-{}-{}",
+            std::process::id(),
+            now_millis()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("Crunch.json"),
+            r#"{"name":"Crunch","bank":"A","slot":1,"rig":{"model":{"id":"nams/abc/A.nam","name":"A.nam"},"ir":{"id":"ir/def/B.wav","name":"B.wav"}}}"#,
+        )
+        .unwrap();
+
+        let renamed = AssetRef {
+            id: "nam/abc/Renamed.nam".into(),
+            name: "Renamed.nam".into(),
+        };
+        let affected = rewrite_refs_in_dir(&dir, "nam/abc/A.nam", Some(&renamed)).unwrap();
+        assert_eq!(affected, ["Crunch"]);
+        let raw = std::fs::read_to_string(dir.join("Crunch.json")).unwrap();
+        assert!(raw.contains("Renamed.nam"));
+        assert!(!raw.contains("A.nam"));
+        assert!(raw.contains("B.wav"));
+
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
