@@ -153,8 +153,8 @@ export function usePresetManager(
   );
 
   /**
-   * Select an empty slot: it holds no NAM or IR, so load bypass (keep the knob
-   * positions) and make it the Save target. Also auditionable/revertible.
+   * Select an empty slot: it holds no NAM or IR, so audition bypass (keeping the
+   * knob positions). The audition can be kept or reverted as usual.
    */
   const selectAt = useCallback(
     (targetBank: Bank, targetSlot: number) => {

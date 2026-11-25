@@ -16,7 +16,7 @@ import AudioStatusBar from './components/AudioStatusBar';
 import Toast from './components/Toast';
 import AssetLibrary from './components/AssetLibrary';
 import type { AssetMeta, Bank } from './types/preset';
-import { importAsset, importPreset, importPresetFromPath, logToTerminal } from './tauri';
+import { importAsset, logToTerminal } from './tauri';
 import { notifyError, notifySuccess } from './notifications';
 import { fileNameFromPath, isTauri } from './utils/platform';
 import './App.css';
@@ -61,7 +61,6 @@ function App() {
 
   const rig = useRigState();
   const presetManager = usePresetManager(rig.snapshot, rig.applySnapshot, rig.clearModelAndIr);
-  const { refresh: refreshPresets } = presetManager;
   const {
     settings,
     setInputVolume,
@@ -115,7 +114,7 @@ function App() {
   }), [presetManager, assetLibrary]);
 
   /**
-   * Process a dropped file path: import a copy into the preset asset library and
+   * Process a dropped file path: import a copy into the model/IR asset library and
    * load it into the audio engine. Tauri's native drag-drop only exposes paths.
    */
   const handleDroppedPath = useCallback(async (path: string) => {
@@ -132,10 +131,6 @@ function App() {
         setIr(asset);
         void refreshAssets();
         log('[IMPORT] IR loaded:', asset.name);
-      } else if (ext === 'json') {
-        await importPresetFromPath(path);
-        await refreshPresets();
-        notifySuccess('Preset imported');
       } else {
         notifyError(`Unsupported file type: .${ext}`);
       }
@@ -143,7 +138,7 @@ function App() {
       log('[IMPORT] file load FAILED', err);
       notifyError(`Could not load file: ${err}`);
     }
-  }, [setIr, refreshPresets, refreshAssets]);
+  }, [setIr, refreshAssets]);
 
   /** Confirm and load the pending NAM file. */
   const handleConfirmLoadNam = async () => {
@@ -335,12 +330,6 @@ function App() {
             const asset = await importAsset('ir', file.name, undefined, base64);
             setIr(asset);
             void refreshAssets();
-          } else if (ext === 'json') {
-            const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-            const json = new TextDecoder().decode(bytes);
-            await importPreset(json);
-            await refreshPresets();
-            notifySuccess('Preset imported');
           } else {
             notifyError(`Unsupported file type: .${ext}`);
           }
@@ -350,7 +339,7 @@ function App() {
       };
       reader.readAsDataURL(file);
     }
-  }, [setModel, setIr, refreshPresets, refreshAssets]);
+  }, [setModel, setIr, refreshAssets]);
 
   return (
     <div
@@ -394,7 +383,7 @@ function App() {
         <div className="drop-zone-overlay">
           <div className="drop-zone-content">
             <span className="drop-zone-icon" aria-hidden="true">🎸</span>
-            <p>Drop a NAM model, IR or preset JSON file</p>
+            <p>Drop a NAM model or IR file</p>
           </div>
         </div>
       )}

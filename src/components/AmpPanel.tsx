@@ -175,7 +175,7 @@ export default function AmpPanel({
           <span className={`footer-chip ${irName ? 'on' : ''}`}>
             {irName ? 'CAB ON' : 'NO CAB'}
           </span>
-          <span className="footer-hint">Drop .nam / .wav / .json to load · Library for stored files</span>
+          <span className="footer-hint">Drop .nam / .wav to load · Library for stored files</span>
         </div>
       </div>
     </div>

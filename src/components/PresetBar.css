@@ -74,7 +74,7 @@
   background: var(--gold-soft);
 }
 
-/* Selected = Save target (dashed outline only). Active = preset loaded (filled gold). */
+/* Selected = focused slot (dashed outline only). Active = preset loaded (filled gold). */
 .preset-slot.selected {
   border-color: rgba(212, 175, 55, 0.55);
   border-style: dashed;
@@ -87,7 +87,7 @@
   box-shadow: inset 0 0 10px rgba(212, 175, 55, 0.12);
 }
 
-/* The Save target can also be the loaded preset; keep the "loaded" look then. */
+/* The selected slot can also be the loaded preset; keep the "loaded" look then. */
 .preset-slot.selected.active {
   border-style: solid;
 }

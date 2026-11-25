@@ -267,22 +267,6 @@ export async function renamePreset(name: string, newName: string): Promise<void>
   return invoke('rename_preset', { name, newName });
 }
 
-export async function exportPreset(name: string): Promise<string> {
-  return invoke('export_preset', { name });
-}
-
-export async function exportPresetToPath(name: string, path: string): Promise<void> {
-  return invoke('export_preset_to_path', { name, path });
-}
-
-export async function importPreset(json: string): Promise<PresetMeta> {
-  return invoke('import_preset', { json });
-}
-
-export async function importPresetFromPath(path: string): Promise<PresetMeta> {
-  return invoke('import_preset_from_path', { path });
-}
-
 /** Store a copy of a dropped NAM/IR in the library and load it into the engine. */
 export async function importAsset(
   kind: 'nam' | 'ir',

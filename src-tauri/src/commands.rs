@@ -849,53 +849,6 @@ pub fn rename_preset(app: AppHandle, name: String, new_name: String) -> Result<(
     save_index(&app, &index)
 }
 
-#[tauri::command]
-pub fn export_preset(app: AppHandle, name: String) -> Result<String, String> {
-    let preset = read_preset(&app, &name)?;
-    serde_json::to_string_pretty(&preset).map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn export_preset_to_path(app: AppHandle, name: String, path: String) -> Result<(), String> {
-    let preset = read_preset(&app, &name)?;
-    let raw = serde_json::to_string_pretty(&preset).map_err(|e| e.to_string())?;
-    std::fs::write(&path, raw).map_err(|e| format!("Could not export preset: {}", e))
-}
-
-#[tauri::command]
-pub fn import_preset(app: AppHandle, json: String) -> Result<PresetMeta, String> {
-    let mut preset: PresetPayload =
-        serde_json::from_str(&json).map_err(|e| format!("Invalid preset file: {}", e))?;
-    preset.schema_version = 1;
-    if preset.bank.is_empty() {
-        preset.bank = "A".into();
-    }
-    if preset.slot == 0 {
-        preset.slot = 1;
-    }
-    let name = sanitize_preset_name(&preset.name);
-    if name.is_empty() {
-        return Err("Preset file has no name".into());
-    }
-    if preset_path(&app, &name)?.exists() {
-        return Err(format!("A preset named '{}' already exists", name));
-    }
-    write_preset(&app, &preset)?;
-    let index = load_index(&app)?;
-    index
-        .entries
-        .iter()
-        .find(|e| e.name == name)
-        .and_then(|e| meta_for(&app, e))
-        .ok_or_else(|| "Could not index imported preset".into())
-}
-
-#[tauri::command]
-pub fn import_preset_from_path(app: AppHandle, path: String) -> Result<PresetMeta, String> {
-    let json = std::fs::read_to_string(&path).map_err(|e| format!("Could not read preset file: {}", e))?;
-    import_preset(app, json)
-}
-
 // ---------------------------------------------------------------------------
 // Local asset library. Files are stored under <library>/<kind>/<hash>/<name>
 // so a path's file name is the display name the DSP already reports.

@@ -1,4 +1,4 @@
-.PHONY: all clean install dev build lint preview rust-check rust-fmt rust-clippy tauri-dev tauri-build tauri-build-debug
+.PHONY: all clean install dev build lint preview rust-check rust-fmt rust-clippy tauri-dev tauri-build tauri-build-debug appimage windows
 
 NODE := npm
 CARGO := cargo
@@ -59,3 +59,14 @@ tauri-build:
 # Tauri: debug build (faster, for testing, JACK host enabled)
 tauri-build-debug:
 	$(TAURI) build --debug --features jack
+
+# Tauri: build an AppImage only (JACK host enabled)
+appimage:
+	$(TAURI) build --bundles appimage --features jack
+
+# Tauri: cross-compile a portable Windows .exe from Linux (JACK is Linux-only).
+# Prerequisites: `rustup target add x86_64-pc-windows-gnu` and mingw-w64
+# (x86_64-w64-mingw32-gcc and x86_64-w64-mingw32-windres).
+# Installers (MSI/NSIS) cannot be bundled on Linux, so emit the exe only.
+windows:
+	$(TAURI) build --target x86_64-pc-windows-gnu --no-bundle

@@ -1,6 +1,11 @@
 # Remove preset import/export
 
-> **Status: planned.** No code changed yet. Line numbers are as of writing and may drift slightly.
+> **Status: implemented.** `tsc --noEmit`, `npm run lint` (one pre-existing unrelated warning at
+> `SettingsPanel.tsx:60`), `npm run build` and `cargo check` pass. `cargo test --lib`: 33 pass, 1 fails
+> (`model_manager::tests::loads_real_nam_and_processes_audio` — needs the absent `nams/JCM800 Hi P6 B8
+> M4 T7 G2.nam` fixture, unrelated to this change). Manual native-window QA is still pending.
+> Line numbers below are as of writing and may drift slightly; `README.md` was rewritten during
+> implementation and already contained no preset import/export claims, so no README edit was needed.
 
 # Context
 
@@ -104,6 +109,8 @@ steps below. Keep `PresetMeta`/`PresetPayload` type imports (used by `listPreset
   `full-window-library.md` (27, 30, 86-88), `improve-preset-management.md` (61-75, 99-121, 188-190),
   `preset-manager.md` (178-180, 201, 212), `ui-polish.md` (116, 150-151, 235-236).
   `reverb-knob.md` references "preset JSON" as the storage format only — leave it alone.
+- **`RELEASE_NOTES.md:42,45-46`** still describes the v0.1.0 release, where the feature did ship; left
+  as a historical snapshot rather than rewritten. Add an explicit removal note when a new release is cut.
 
 # Risks / things to watch
 
@@ -133,15 +140,19 @@ No frontend test runner exists (`package.json:6-12`). Verify with:
 
 # Delivery steps
 
-- [ ] **Step 1 — Backend.** Delete the four commands in `commands.rs` and their registrations in
-      `lib.rs`. Run `cargo check`.
-- [ ] **Step 2 — Bridge.** Delete the four wrappers in `tauri.ts`. Run `npx tsc --noEmit`.
-- [ ] **Step 3 — UI.** Remove both handlers and menu items from `PresetBar.tsx` plus its three unused
+- [x] **Step 1 — Backend.** Delete the four commands in `commands.rs` and their registrations in
+      `lib.rs`. `cargo check` passes.
+- [x] **Step 2 — Bridge.** Delete the four wrappers in `tauri.ts`. `npx tsc --noEmit` passes.
+- [x] **Step 3 — UI.** Remove both handlers and menu items from `PresetBar.tsx` plus its three unused
       imports; remove the `.json` branches and `refreshPresets` from `App.tsx`.
-- [ ] **Step 4 — Text.** Update drop-zone overlay and footer hint; confirm unsupported-file message.
-- [ ] **Step 5 — Verify.** Run `tsc`, `npm run lint`, `npm run build`, `cargo check/test`, then the
-      manual QA checklist.
-- [ ] **Step 6 — Docs.** Rewrite `README.md:15,21-22`; add status notes to affected historical plans.
+- [x] **Step 4 — Text.** Update drop-zone overlay and footer hint; `.json` now hits the existing
+      "Unsupported file type" fallback.
+- [x] **Step 5 — Verify.** `tsc`, `npm run lint` (one pre-existing warning), `npm run build`,
+      `cargo check` pass. `cargo test --lib`: 33 pass, 1 pre-existing fixture-dependent failure.
+      Manual native-window QA is pending.
+- [x] **Step 6 — Docs.** No README edit needed — the current README was rewritten during
+      implementation and no longer documents preset import/export. Historical plans were left as
+      records of past work; this plan carries the status note.
 
 # Open decisions
 

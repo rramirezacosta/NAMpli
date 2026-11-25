@@ -150,7 +150,8 @@ CONTRIBUTING.md if development docs grow.
 
 # Open questions
 
-1. **License** — no LICENSE file exists; should the README state a license, or use a placeholder?
+1. **License — resolved:** GNU GPL v3 only (GPL-3.0-only) was added in `LICENSE` and declared in
+   `package.json`, `src-tauri/Cargo.toml` and the README after this README work was done.
 2. **Re-capture** — worth retaking the hero with a cab IR loaded (the current shot shows `No cab IR`),
    or is the existing one fine as-is?
 3. **Extra screenshots** — is a second image of the Library/tuner wanted later?

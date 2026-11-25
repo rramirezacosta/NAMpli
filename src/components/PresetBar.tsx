@@ -1,17 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import type { Bank } from '../types/preset';
 import { BANKS, SLOTS, slotLabel } from '../types/preset';
 import type { PresetManager } from '../hooks/usePresetManager';
-import { exportPresetToPath, importPresetFromPath } from '../tauri';
-import { notifyError, notifySuccess } from '../notifications';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import PresetEditor from './PresetEditor';
 import './PresetBar.css';
 
 type Dialog =
-  | { mode: 'saveAs'; name: string; bank: Bank; slot: number }
+  | { mode: 'new'; name: string; bank: Bank; slot: number }
   | { mode: 'rename'; source: string; name: string }
   | { mode: 'edit'; source: string };
 
@@ -44,7 +41,7 @@ export default function PresetBar({ manager }: PresetBarProps) {
 
   // Move focus into the name dialog, trap Tab and restore focus on close.
   useDialogFocus(
-    dialog?.mode === 'saveAs' || dialog?.mode === 'rename',
+    dialog?.mode === 'rename' || dialog?.mode === 'new',
     () => setDialog(null),
     dialogRef,
   );
@@ -119,47 +116,15 @@ export default function PresetBar({ manager }: PresetBarProps) {
     if (!dialog || dialog.mode === 'edit') return;
     const name = dialog.name.trim();
     if (!name) return;
-    if (dialog.mode === 'saveAs') {
+    if (dialog.mode === 'new') {
       void manager.save(name, dialog.bank, dialog.slot);
-      setDialog(null);
-    } else if (dialog.mode === 'rename') {
+    } else {
       void manager.rename(dialog.source, name);
-      setDialog(null);
     }
+    setDialog(null);
   };
 
   const menuMeta = menu ? manager.metaAt(menu.bank, menu.slot) : undefined;
-
-  const handleImportPreset = async () => {
-    setMenu(null);
-    const path = await openDialog({
-      multiple: false,
-      filters: [{ name: 'NAMpli preset', extensions: ['json'] }],
-    });
-    if (!path || typeof path !== 'string') return;
-    try {
-      await importPresetFromPath(path);
-      await manager.refresh();
-      notifySuccess('Preset imported');
-    } catch (err) {
-      notifyError(`Could not import preset: ${err}`);
-    }
-  };
-
-  const handleExportPreset = async (name: string) => {
-    setMenu(null);
-    const path = await saveDialog({
-      defaultPath: `${name}.json`,
-      filters: [{ name: 'NAMpli preset', extensions: ['json'] }],
-    });
-    if (!path) return;
-    try {
-      await exportPresetToPath(name, path);
-      notifySuccess(`Exported ${name}`);
-    } catch (err) {
-      notifyError(`Could not export preset: ${err}`);
-    }
-  };
 
   return (
     <div className="preset-bar">
@@ -198,10 +163,10 @@ export default function PresetBar({ manager }: PresetBarProps) {
                 onKeyDown={(event) => openMenuFromKeyboard(event, manager.bank, number)}
                 title={
                   meta
-                    ? `Recall ${meta.name}${selected ? ' · selected as Save target' : ''}`
+                    ? `Recall ${meta.name}${selected ? ' · selected slot' : ''}`
                     : selected
-                      ? 'Save target — press Save to store here'
-                      : 'Empty slot — click to select, then use ⋯ → Save here'
+                      ? 'Empty slot — selected (bypass preview), or use ⋯ → New preset…'
+                      : 'Empty slot — click to preview bypass, or use ⋯ → New preset…'
                 }
                 aria-pressed={selected}
                 aria-haspopup="menu"
@@ -224,7 +189,7 @@ export default function PresetBar({ manager }: PresetBarProps) {
                 onContextMenu={(event) => openMenu(event, manager.bank, number)}
                 onKeyDown={(event) => openMenuFromKeyboard(event, manager.bank, number)}
                 aria-label={`Actions for slot ${number}${meta ? ` (${meta.name})` : ''}`}
-                title="Slot actions"
+                title={meta ? 'Slot actions' : 'New preset…'}
                 aria-haspopup="menu"
                 aria-expanded={menuOpen}
                 disabled={manager.busy}
@@ -248,21 +213,20 @@ export default function PresetBar({ manager }: PresetBarProps) {
             <div className="preset-menu-title">
               {slotLabel(menu.bank, menu.slot)} · {menuMeta?.name ?? 'Empty'}
             </div>
-            <button type="button" role="menuitem" onClick={() => void handleImportPreset()}>
-              Import preset…
-            </button>
-            <button type="button" role="menuitem" onClick={() => { void manager.save(undefined, menu.bank, menu.slot); setMenu(null); }}>
-              Save here
-            </button>
             <button
               type="button"
               role="menuitem"
               onClick={() => {
-                setDialog({ mode: 'saveAs', name: menuMeta?.name ?? `Preset ${slotLabel(menu.bank, menu.slot)}`, bank: menu.bank, slot: menu.slot });
+                setDialog({
+                  mode: 'new',
+                  name: `Preset ${slotLabel(menu.bank, menu.slot)}`,
+                  bank: menu.bank,
+                  slot: menu.slot,
+                });
                 setMenu(null);
               }}
             >
-              Save As…
+              New preset…
             </button>
             {menuMeta && (
               <>
@@ -275,9 +239,6 @@ export default function PresetBar({ manager }: PresetBarProps) {
                   }}
                 >
                   Edit…
-                </button>
-                <button type="button" role="menuitem" onClick={() => void handleExportPreset(menuMeta.name)}>
-                  Export…
                 </button>
                 <button
                   type="button"
@@ -322,7 +283,7 @@ export default function PresetBar({ manager }: PresetBarProps) {
               onClick={(event) => event.stopPropagation()}
               onSubmit={submitDialog}
             >
-              <h3 id="preset-dialog-title">{dialog.mode === 'saveAs' ? 'Save preset' : 'Rename preset'}</h3>
+              <h3 id="preset-dialog-title">{dialog.mode === 'new' ? 'New preset' : 'Rename preset'}</h3>
               <label htmlFor="preset-name-input">Name</label>
               <input
                 id="preset-name-input"
@@ -333,7 +294,7 @@ export default function PresetBar({ manager }: PresetBarProps) {
               />
               <div className="preset-dialog-buttons">
                 <button type="button" className="btn" onClick={() => setDialog(null)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">{dialog.mode === 'saveAs' ? 'Save' : 'Rename'}</button>
+                <button type="submit" className="btn btn-primary">{dialog.mode === 'new' ? 'Create' : 'Rename'}</button>
               </div>
             </form>
           </div>
