@@ -674,6 +674,10 @@ fn apply_rig_assets(
     engine: &mut AudioEngine,
     rig: &RigSnapshot,
 ) -> Result<(), String> {
+    // Hold one mute across the whole recall so loading the NAM and then the IR
+    // does not bounce the output back up between the two swaps. Nested guard
+    // requests in the engine methods reuse this one.
+    let _mute = engine.mute_guard();
     match &rig.model {
         Some(asset) => {
             let path = resolve_asset_path(app, &asset.id)?;

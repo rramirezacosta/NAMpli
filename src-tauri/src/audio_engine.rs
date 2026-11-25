@@ -11,9 +11,9 @@ use ringbuf::traits::{Consumer, Observer, Producer, Split};
 use ringbuf::HeapRb;
 use serde::Serialize;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Largest chunk the DSP thread processes in one go. Kept modest so a backlog
 /// can never push a large burst into the output ring (which would add latency
@@ -30,6 +30,14 @@ const MODEL_CROSSFADE_MS: f32 = 20.0;
 /// Maximum wet amount at Reverb = 10. Keeping some dry signal avoids the
 /// "guitar disappeared into a cloud" sound at the top of the knob.
 const REVERB_MAX_WET: f32 = 0.5;
+/// Output ramp used around discrete rig changes (preset load, audition revert).
+/// A short dip is inaudible during a patch change and hides the discontinuity of
+/// swapping the NAM, the IR's convolution history or going to/from bypass.
+const MUTE_RAMP_MS: f32 = 2.0;
+/// Level at which the DSP thread acknowledges that the mute ramp has settled.
+const MUTE_ACK_LEVEL: f32 = 0.01;
+/// Don't hang the UI forever if the DSP thread is stalled when a rig is swapped.
+const MUTE_WAIT: Duration = Duration::from_millis(100);
 
 /// Errors and counters that the UI can display. The stream error callbacks run
 /// on the audio thread, so they only use atomics and `try_lock`.
@@ -65,6 +73,63 @@ impl AudioHealth {
 
     fn last_error(&self) -> Option<String> {
         self.last_error.lock().clone()
+    }
+}
+
+/// Coordinates a brief output mute around discrete rig changes.
+///
+/// The UI thread cannot crossfade the cabinet IR (its convolution history lives
+/// on the DSP thread) and bypass switches have no model to fade between, so a
+/// hard swap clicks. Instead, `MuteGuard` asks the DSP thread to ramp the output
+/// to silence, waits for the acknowledgement, and lets the caller swap assets
+/// while nothing reaches the device. The ramp back up happens when the guard is
+/// dropped. Nesting is counted so a whole preset recall stays muted even though
+/// it loads the NAM and IR through separate engine methods.
+pub struct DeClick {
+    mute: AtomicBool,
+    ready: AtomicBool,
+    depth: AtomicUsize,
+}
+
+impl DeClick {
+    fn new() -> Self {
+        DeClick {
+            mute: AtomicBool::new(false),
+            ready: AtomicBool::new(false),
+            depth: AtomicUsize::new(0),
+        }
+    }
+
+    fn reset(&self) {
+        self.mute.store(false, Ordering::Release);
+        self.ready.store(false, Ordering::Release);
+    }
+}
+
+/// RAII guard: mutes on creation, restores output on drop.
+pub struct MuteGuard {
+    declick: Arc<DeClick>,
+}
+
+impl MuteGuard {
+    fn new(declick: Arc<DeClick>, powered: bool) -> Self {
+        if declick.depth.fetch_add(1, Ordering::SeqCst) == 0 && powered {
+            declick.mute.store(true, Ordering::Release);
+            declick.ready.store(false, Ordering::Release);
+            let start = Instant::now();
+            while !declick.ready.load(Ordering::Acquire) && start.elapsed() < MUTE_WAIT {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        }
+        MuteGuard { declick }
+    }
+}
+
+impl Drop for MuteGuard {
+    fn drop(&mut self) {
+        if self.declick.depth.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.declick.reset();
+        }
     }
 }
 
@@ -160,6 +225,8 @@ pub struct AudioEngine {
     active_output_device: Option<String>,
     health: Arc<AudioHealth>,
     ir: Arc<Mutex<Option<CabinetIr>>>,
+    /// Short output mute around NAM/IR swaps; shared with the DSP worker.
+    declick: Arc<DeClick>,
 }
 
 impl AudioEngine {
@@ -178,7 +245,15 @@ impl AudioEngine {
             active_output_device: None,
             health: Arc::new(AudioHealth::new()),
             ir: Arc::new(Mutex::new(None)),
+            declick: Arc::new(DeClick::new()),
         }
+    }
+
+    /// Mute the output while discrete rig changes are applied. Nested guards
+    /// (e.g. a preset recall loading both a NAM and an IR) keep the output
+    /// muted until the outermost change completes.
+    pub fn mute_guard(&self) -> MuteGuard {
+        MuteGuard::new(Arc::clone(&self.declick), self.is_powered())
     }
 
     /// Remember which devices the UI selected. If audio is already running the
@@ -348,6 +423,7 @@ impl AudioEngine {
             state.meters = MeterSnapshot::idle();
         }
         self.health.reset();
+        self.declick.reset();
         {
             let mut mm = self.model_manager.lock();
             mm.clear_fade();
@@ -383,6 +459,7 @@ impl AudioEngine {
         let model_manager = Arc::clone(&self.model_manager);
         let state = Arc::clone(&self.state);
         let ir = Arc::clone(&self.ir);
+        let declick = Arc::clone(&self.declick);
         let sample_rate = output_sample_rate as f32;
 
         // Input callback: take the first channel (mono guitar input) and push it to
@@ -425,6 +502,11 @@ impl AudioEngine {
                 // switching gain models never produces zipper noise or clicks.
                 let smooth_coeff = (-1.0_f32 / (0.005 * sample_rate)).exp();
                 let mut gain = f32::NAN;
+                // Brief output mute around discrete rig changes. Ramped per
+                // sample so even a swap mid-note never produces a click.
+                let mute_coeff =
+                    (-1.0_f32 / (MUTE_RAMP_MS * sample_rate / 1000.0)).exp();
+                let mut mute_gain = 1.0_f32;
                 // Input trim + noise gate state.
                 let mut trim = 1.0_f32;
                 let mut gate_env = 0.0_f32;
@@ -589,6 +671,7 @@ impl AudioEngine {
                     // are about to reach the device. During a rig change the
                     // output is ramped to silence first, so swapping the NAM,
                     // IR or going to/from bypass cannot click.
+                    let muted = declick.mute.load(Ordering::Relaxed);
                     let mut output_sum_sq = 0.0_f64;
                     let mut output_peak = 0.0_f32;
                     for sample in &mut buffer[..got] {
@@ -598,11 +681,20 @@ impl AudioEngine {
                         // Soft-knee limiter: transparent under -1dBFS, rounds off
                         // peaks above it, and can never produce digital clipping.
                         *sample = soft_clip((x - dc_avg) * gain);
+                        mute_gain = mute_coeff * mute_gain
+                            + (1.0 - mute_coeff) * if muted { 0.0 } else { 1.0 };
+                        *sample *= mute_gain;
                         output_sum_sq += *sample as f64 * *sample as f64;
                         output_peak = output_peak.max((*sample).abs());
                     }
 
                     out_producer.push_slice(&buffer[..got]);
+
+                    // Acknowledge a completed mute ramp so the UI thread can
+                    // swap assets while the output is silent.
+                    declick
+                        .ready
+                        .store(muted && mute_gain <= MUTE_ACK_LEVEL, Ordering::Release);
 
                     // Meters are published only after the block has been handed
                     // to the output ring, so this work can never delay audio.
@@ -719,6 +811,7 @@ impl AudioEngine {
             state.powered = false;
             state.meters = MeterSnapshot::idle();
         }
+        self.declick.reset();
         log::info!("Audio engine stopped");
     }
 
@@ -808,12 +901,16 @@ impl AudioEngine {
         let rate = self.state.lock().sample_rate;
         cabinet.prepare(rate);
         let name = cabinet.file_name().to_string();
+        // A new IR starts with an empty convolution history, so swapping it in
+        // mid-sound would jump. Hide that jump behind the output mute ramp.
+        let _mute = self.mute_guard();
         *self.ir.lock() = Some(cabinet);
         log::info!("Loaded cabinet IR: {} ({})", name, path);
         Ok(name)
     }
 
     pub fn clear_ir(&self) {
+        let _mute = self.mute_guard();
         *self.ir.lock() = None;
         log::info!("Cabinet IR cleared");
     }
@@ -872,12 +969,17 @@ impl AudioEngine {
 
     /// Return to bypass mode (used when recalling a preset without a NAM).
     pub fn clear_nam(&self) {
+        // Bypass has no model to crossfade into, so mute the hard switch.
+        let _mute = self.mute_guard();
         self.model_manager.lock().clear_current();
         log::info!("NAM model cleared (bypass)");
     }
 
     /// Load a NAM model from raw bytes (drag-and-drop).
     pub fn load_nam_from_bytes(&self, filename: &str, bytes: Vec<u8>) -> Result<String, String> {
+        // Model-to-model switches already crossfade; muting also covers the
+        // bypass -> model case, which has no outgoing model to fade from.
+        let _mute = self.mute_guard();
         let sample_rate = self.state.lock().sample_rate;
         let mut mm = self.model_manager.lock();
         mm.load_model_from_bytes(filename, bytes)
