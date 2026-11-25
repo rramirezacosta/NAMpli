@@ -155,7 +155,12 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
         >
           Save
         </button>
-        <button type="button" className="preset-action-btn" onClick={onOpenLibrary}>
+        <button
+          type="button"
+          className="preset-action-btn"
+          data-preset-library-trigger
+          onClick={onOpenLibrary}
+        >
           Library
         </button>
       </div>

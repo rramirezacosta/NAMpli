@@ -5,7 +5,6 @@ mod eq;
 mod ir;
 mod reverb;
 mod tuner;
-mod visualizer;
 
 use audio_engine::AudioEngine;
 use model_manager::ModelManager;
@@ -55,13 +54,13 @@ pub fn run() {
             commands::set_reverb,
             commands::get_audio_status,
             commands::get_tuner,
-            commands::get_visualization,
-            commands::set_visualization_enabled,
             commands::set_buffer_size,
             commands::list_presets,
             commands::save_preset,
             commands::load_preset,
             commands::load_rig_assets,
+            commands::get_preset,
+            commands::move_preset,
             commands::delete_preset,
             commands::rename_preset,
             commands::export_preset,

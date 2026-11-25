@@ -322,39 +322,6 @@ pub fn get_tuner(
     Ok(TunerStatus { hz, level_db })
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VisualizationStatus {
-    pub waveform: Vec<f32>,
-    pub spectrum: Vec<f32>,
-    pub level_db: f32,
-    pub peak_db: f32,
-}
-
-#[tauri::command]
-pub fn get_visualization(
-    engine: State<'_, StdMutex<AudioEngine>>,
-) -> Result<Option<VisualizationStatus>, String> {
-    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-    Ok(engine.visualization().map(|frame| VisualizationStatus {
-        waveform: frame.waveform,
-        spectrum: frame.spectrum,
-        level_db: frame.level_db,
-        peak_db: frame.peak_db,
-    }))
-}
-
-/// Turns the Scope's DSP work on/off. Called when the popup opens/closes, not per poll.
-#[tauri::command]
-pub fn set_visualization_enabled(
-    engine: State<'_, StdMutex<AudioEngine>>,
-    enabled: bool,
-) -> Result<(), String> {
-    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-    engine.set_visualization_enabled(enabled);
-    Ok(())
-}
-
 #[tauri::command]
 pub fn set_buffer_size(
     engine: State<'_, StdMutex<AudioEngine>>,
@@ -737,6 +704,65 @@ pub fn load_rig_assets(
 ) -> Result<(), String> {
     let mut engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     apply_rig_assets(&app, &mut engine, &rig)
+}
+
+/// Read-only preset access for the library's Copy action: no engine side effects.
+#[tauri::command]
+pub fn get_preset(app: AppHandle, name: String) -> Result<PresetPayload, String> {
+    read_preset(&app, &name)
+}
+
+/// Relocate a preset to another bank/slot, optionally replacing the occupant.
+#[tauri::command]
+pub fn move_preset(
+    app: AppHandle,
+    name: String,
+    bank: String,
+    slot: u8,
+    replace: bool,
+) -> Result<(), String> {
+    if !matches!(bank.as_str(), "A" | "B" | "C" | "D") {
+        return Err(format!("Unknown bank '{}'", bank));
+    }
+    if !(1..=4).contains(&slot) {
+        return Err("Slot must be between 1 and 4".into());
+    }
+    let safe = sanitize_preset_name(&name);
+    let mut index = sync_index(&app)?;
+    let occupant = index
+        .entries
+        .iter()
+        .find(|e| e.bank == bank && e.slot == slot && e.name != safe)
+        .map(|e| e.name.clone());
+    if let Some(other) = &occupant {
+        if !replace {
+            return Err(format!("Slot {}{} holds '{}'", bank, slot, other));
+        }
+    }
+    let entry = index
+        .entries
+        .iter_mut()
+        .find(|e| e.name == safe)
+        .ok_or_else(|| format!("Preset '{}' not found", safe))?;
+    entry.bank = bank.clone();
+    entry.slot = slot;
+
+    let path = preset_path(&app, &safe)?;
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Could not read preset '{}': {}", safe, e))?;
+    let mut preset = parse_preset_json(&raw, &safe)?;
+    preset.bank = bank;
+    preset.slot = slot;
+    preset.updated_at = now_millis();
+    let raw = serde_json::to_string_pretty(&preset).map_err(|e| e.to_string())?;
+    std::fs::write(&path, raw).map_err(|e| format!("Could not write preset: {}", e))?;
+
+    if let Some(other) = occupant {
+        index.entries.retain(|e| e.name != other);
+        std::fs::remove_file(preset_path(&app, &other)?)
+            .map_err(|e| format!("Could not remove replaced preset: {}", e))?;
+    }
+    save_index(&app, &index)
 }
 
 #[tauri::command]

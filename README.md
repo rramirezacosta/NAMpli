@@ -14,8 +14,13 @@ The main panel has a DSP-style preset board with four banks (A/B/C/D) and four s
   second audition does not lose the original sound — Revert always goes back to where you started.
 - **Right-click a slot** for Save here, Save As…, Rename… and Delete.
 - **Save** writes the current knob state, NAM and IR to the selected slot and ends the audition. A gold dot
-  marks unsaved changes.
-- **Library** opens the preset library, where presets can be recalled, renamed, deleted, exported and imported as JSON.
+  marks unsaved changes: it compares the working sound with the recalled preset (or, for an empty slot, with
+  a blank preset). Tiny floating-point drift from the backend knobs does not trigger it.
+- **Library** switches to a full-window browser with search, bank filters, sorting and a details panel. The
+  currently loaded preset is marked **LOADED** and the one being auditioned is marked **PREVIEW**, so they are
+  distinct from the row you merely selected. From there you can audition, rename, move or copy presets between
+  slots, export, import and delete them. **Esc** or **← Back to amp** returns to the faceplate (Esc first reverts
+  an active audition). Dropping a preset `.json` into the library imports it.
 
 Dropped `.nam` and `.wav` files are copied into a local asset library under the app's data directory,
 so presets keep their model and cabinet after a restart. The app still starts in bypass mode; recall a
@@ -29,22 +34,6 @@ The **Reverb** knob on the output section adds an algorithmic room reverb (0 = o
 mix). It starts off, changes take effect immediately while playing, and its value is saved with each
 preset. Older presets without a reverb value recall with the effect off. Room size and damping are
 fixed; no external IR file is needed.
-
-## Sound visualization
-
-The **Scope** button in the title bar opens a live display of the amp's output: an oscilloscope
-waveform, a log-frequency spectrum, and an RMS/peak level meter with a clip indicator. It reads the
-signal after the whole DSP chain, so EQ, reverb and gain changes are visible as you play.
-
-While the amp is powered on, the same signal also drives an ambient **background visualization**:
-a muted spectrum and waveform behind the faceplate. It is on by default; **Settings → Visualization**
-has a toggle to switch it off and an intensity slider. The background and the Scope popup share one
-polling loop, so opening the popup does not start a second one.
-
-Both views are read-only and do not change the sound or add audio latency. Analysis runs on the
-existing DSP thread after the output buffer has been handed off, and it is switched off entirely
-while nothing is displayed, the window is hidden, or the amp is powered off. The Tuner and Scope
-popups share the same corner, so opening one closes the other.
 
 # React + TypeScript + Vite
 

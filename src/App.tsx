@@ -4,21 +4,16 @@ import { useRigState } from './hooks/useRigState';
 import { usePresetManager } from './hooks/usePresetManager';
 import { useAudioStatus } from './hooks/useAudioStatus';
 import { useDialogFocus } from './hooks/useDialogFocus';
-import { useVisualization } from './hooks/useVisualization';
-import { useBackgroundVisualizationSettings } from './hooks/useBackgroundVisualizationSettings';
-import BackgroundVisualization from './components/BackgroundVisualization';
 import AmpPanel from './components/AmpPanel';
 import SettingsIcon from './components/SettingsIcon';
 import TunerIcon from './components/TunerIcon';
-import VisualizationIcon from './components/VisualizationIcon';
 import SettingsPanel from './components/SettingsPanel';
 import Tuner from './components/Tuner';
-import Visualization from './components/Visualization';
 import AudioStatusBar from './components/AudioStatusBar';
 import Toast from './components/Toast';
 import PresetLibrary from './components/PresetLibrary';
-import { importAsset, logToTerminal } from './tauri';
-import { notifyError } from './notifications';
+import { importAsset, importPreset, importPresetFromPath, logToTerminal } from './tauri';
+import { notifyError, notifySuccess } from './notifications';
 import './App.css';
 
 /** Pending NAM file waiting for user confirmation */
@@ -39,8 +34,9 @@ function log(...args: unknown[]) {
 function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showTuner, setShowTuner] = useState(false);
-  const [showVisualization, setShowVisualization] = useState(false);
-  const [showLibrary, setShowLibrary] = useState(false);
+  // The library is a full-window view, not an overlay.
+  const [view, setView] = useState<'amp' | 'library'>('amp');
+  const [librarySelection, setLibrarySelection] = useState<string | null>(null);
 
   // Drag-and-drop state for unnamed mode
   const [dragOver, setDragOver] = useState(false);
@@ -50,25 +46,22 @@ function App() {
   const [pendingNam, setPendingNam] = useState<PendingNam | null>(null);
 
   const tunerPopupRef = useRef<HTMLDivElement>(null);
-  const visualizationPopupRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
 
   const closeSettings = () => setShowSettings(false);
   const closeTuner = () => setShowTuner(false);
-  const closeVisualization = () => setShowVisualization(false);
-  const closeLibrary = () => setShowLibrary(false);
-  // The two analyser popups share the same corner, so only one is visible at a time.
-  const openTuner = () => {
-    setShowVisualization(false);
-    setShowTuner(true);
-  };
-  const openVisualization = () => {
-    setShowTuner(false);
-    setShowVisualization(true);
-  };
+  const openLibrary = () => setView('library');
+  const backToAmp = useCallback(() => {
+    setView('amp');
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>('[data-preset-library-trigger]')?.focus();
+    });
+  }, []);
+  const openTuner = () => setShowTuner(true);
 
   const rig = useRigState();
   const presetManager = usePresetManager(rig.snapshot(), rig.applySnapshot, rig.clearModelAndIr);
+  const { refresh: refreshPresets } = presetManager;
   const {
     settings,
     setInputVolume,
@@ -83,13 +76,6 @@ function App() {
     setIr,
   } = rig;
   const audioStatus = useAudioStatus();
-  const background = useBackgroundVisualizationSettings();
-
-  // Single polling loop and enable flag for both the background and the popup.
-  const visualizationFrame = useVisualization(
-    background.enabled || showVisualization,
-    settings.powerOn,
-  );
 
   /** Extract the file name from a path reported by Tauri's native drop event. */
   const fileNameFromPath = (path: string) =>
@@ -112,6 +98,14 @@ function App() {
         const asset = await importAsset('ir', filename, path);
         setIr(asset);
         log('[IMPORT] IR loaded:', asset.name);
+      } else if (ext === 'json') {
+        if (view !== 'library') {
+          notifyError('Open the Library to import a preset file.');
+          return;
+        }
+        await importPresetFromPath(path);
+        await refreshPresets();
+        notifySuccess('Preset imported');
       } else {
         notifyError(`Unsupported file type: .${ext}`);
       }
@@ -119,7 +113,7 @@ function App() {
       log('[IMPORT] file load FAILED', err);
       notifyError(`Could not load file: ${err}`);
     }
-  }, [setIr]);
+  }, [setIr, view, refreshPresets]);
 
   /** Confirm and load the pending NAM file. */
   const handleConfirmLoadNam = async () => {
@@ -146,27 +140,45 @@ function App() {
   };
 
   useDialogFocus(showTuner, closeTuner, tunerPopupRef);
-  useDialogFocus(showVisualization, closeVisualization, visualizationPopupRef);
   useDialogFocus(!!pendingNam, handleCancelLoadNam, confirmDialogRef);
 
-  // Audition controls: Enter keeps the previewed sound, Escape reverts it.
+  // Key precedence: Esc reverts an audition, otherwise leaves the library view.
+  // Enter keeps an audition, otherwise auditions the selected library preset.
   // Dialogs and menus keep their own Escape handling while they are open.
-  const { preview: presetPreview, commitPreview, revertPreview } = presetManager;
+  const { preview: presetPreview, commitPreview, revertPreview, metas, recallAt } = presetManager;
   useEffect(() => {
-    if (!presetPreview) return;
     const onKey = (event: KeyboardEvent) => {
       if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      const target = event.target as HTMLElement | null;
       if (event.key === 'Escape') {
         event.preventDefault();
-        void revertPreview();
-      } else if (event.key === 'Enter') {
+        if (presetPreview) void revertPreview();
+        else if (view === 'library') backToAmp();
+        return;
+      }
+      if (event.key !== 'Enter') return;
+      // Let a focused control perform its own default action.
+      if (
+        target &&
+        (['BUTTON', 'INPUT', 'TEXTAREA', 'SELECT', 'A'].includes(target.tagName) ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (presetPreview) {
         event.preventDefault();
         commitPreview();
+      } else if (view === 'library' && librarySelection) {
+        const meta = metas.find((item) => item.name === librarySelection);
+        if (meta) {
+          event.preventDefault();
+          void recallAt(meta.bank, meta.slot);
+        }
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [presetPreview, commitPreview, revertPreview]);
+  }, [presetPreview, commitPreview, revertPreview, view, librarySelection, metas, recallAt, backToAmp]);
 
   // Native drag-and-drop: browsers' onDrop does not fire for OS file drops in
   // the Tauri webview, so listen to the webview event which carries file paths.
@@ -258,6 +270,16 @@ function App() {
           } else if (ext === 'wav') {
             const asset = await importAsset('ir', file.name, undefined, base64);
             setIr(asset);
+          } else if (ext === 'json') {
+            if (view !== 'library') {
+              notifyError('Open the Library to import a preset file.');
+              return;
+            }
+            const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+            const json = new TextDecoder().decode(bytes);
+            await importPreset(json);
+            await refreshPresets();
+            notifySuccess('Preset imported');
           } else {
             notifyError(`Unsupported file type: .${ext}`);
           }
@@ -267,7 +289,7 @@ function App() {
       };
       reader.readAsDataURL(file);
     }
-  }, [setModel, setIr]);
+  }, [setModel, setIr, view, refreshPresets]);
 
   return (
     <div
@@ -277,11 +299,9 @@ function App() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      <BackgroundVisualization frame={visualizationFrame} intensity={background.intensity} />
       <div className="window-tools">
         <SettingsIcon onClick={() => setShowSettings(true)} />
         <TunerIcon onClick={openTuner} />
-        <VisualizationIcon onClick={openVisualization} />
       </div>
       <AudioStatusBar status={audioStatus} />
       <Toast />
@@ -295,15 +315,7 @@ function App() {
           <button type="button" onClick={() => void presetManager.revertPreview()}>Revert</button>
         </div>
       )}
-      <SettingsPanel
-        open={showSettings}
-        onClose={closeSettings}
-        backgroundEnabled={background.enabled}
-        backgroundIntensity={background.intensity}
-        onSetBackgroundEnabled={background.setEnabled}
-        onSetBackgroundIntensity={background.setIntensity}
-      />
-      <PresetLibrary open={showLibrary} onClose={closeLibrary} manager={presetManager} />
+      <SettingsPanel open={showSettings} onClose={closeSettings} />
       {showTuner && (
         <div className="tuner-popup-overlay" onClick={closeTuner}>
           <div
@@ -322,30 +334,12 @@ function App() {
           </div>
         </div>
       )}
-      {showVisualization && (
-        <div className="tuner-popup-overlay" onClick={closeVisualization}>
-          <div
-            className="tuner-popup visualization-popup"
-            ref={visualizationPopupRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Scope"
-            tabIndex={-1}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Visualization frame={visualizationFrame} powered={settings.powerOn} />
-            <button className="tuner-popup-close" onClick={closeVisualization}>
-              Close
-            </button>
-          </div>
-        </div>
-      )}
       {/* Drop zone overlay */}
       {dragOver && (
         <div className="drop-zone-overlay">
           <div className="drop-zone-content">
             <span className="drop-zone-icon" aria-hidden="true">🎸</span>
-            <p>Drop NAM or IR file to load</p>
+            <p>{view === 'library' ? 'Drop a preset JSON, NAM or IR file' : 'Drop NAM or IR file to load'}</p>
           </div>
         </div>
       )}
@@ -378,28 +372,37 @@ function App() {
         </div>
       )}
       <div className="app-content">
-        <AmpPanel
-          inputVolume={settings.inputVolume}
-          gate={settings.gate}
-          bass={settings.bass}
-          middle={settings.middle}
-          treble={settings.treble}
-          outputVolume={settings.outputVolume}
-          reverb={settings.reverb}
-          powerOn={settings.powerOn}
-          modelName={rig.model?.name ?? null}
-          irName={rig.ir?.name ?? null}
-          presetManager={presetManager}
-          onOpenLibrary={() => setShowLibrary(true)}
-          onTogglePower={togglePower}
-          onSetInputVolume={setInputVolume}
-          onSetGate={setGate}
-          onSetBass={setBass}
-          onSetMiddle={setMiddle}
-          onSetTreble={setTreble}
-          onSetOutputVolume={setOutputVolume}
-          onSetReverb={setReverb}
-        />
+        {view === 'library' ? (
+          <PresetLibrary
+            manager={presetManager}
+            onBack={backToAmp}
+            selected={librarySelection}
+            onSelect={setLibrarySelection}
+          />
+        ) : (
+          <AmpPanel
+            inputVolume={settings.inputVolume}
+            gate={settings.gate}
+            bass={settings.bass}
+            middle={settings.middle}
+            treble={settings.treble}
+            outputVolume={settings.outputVolume}
+            reverb={settings.reverb}
+            powerOn={settings.powerOn}
+            modelName={rig.model?.name ?? null}
+            irName={rig.ir?.name ?? null}
+            presetManager={presetManager}
+            onOpenLibrary={openLibrary}
+            onTogglePower={togglePower}
+            onSetInputVolume={setInputVolume}
+            onSetGate={setGate}
+            onSetBass={setBass}
+            onSetMiddle={setMiddle}
+            onSetTreble={setTreble}
+            onSetOutputVolume={setOutputVolume}
+            onSetReverb={setReverb}
+          />
+        )}
       </div>
     </div>
   );

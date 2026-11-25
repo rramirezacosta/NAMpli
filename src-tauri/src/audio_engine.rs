@@ -3,7 +3,6 @@ use crate::ir::CabinetIr;
 use crate::model_manager::ModelManager;
 use crate::reverb::Reverb;
 use crate::tuner::Tuner;
-use crate::visualizer::{VisualizationFrame, Visualizer};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, SupportedStreamConfig, SupportedStreamConfigRange};
 use parking_lot::Mutex;
@@ -156,10 +155,6 @@ pub struct AudioEngine {
     active_output_device: Option<String>,
     health: Arc<AudioHealth>,
     ir: Arc<Mutex<Option<CabinetIr>>>,
-    /// Latest visualization snapshot. Published by the DSP worker with `try_lock`.
-    visualization: Arc<Mutex<Option<VisualizationFrame>>>,
-    /// Scope open + power on. Gates all visualization work on the worker.
-    visualization_enabled: Arc<AtomicBool>,
 }
 
 impl AudioEngine {
@@ -178,8 +173,6 @@ impl AudioEngine {
             active_output_device: None,
             health: Arc::new(AudioHealth::new()),
             ir: Arc::new(Mutex::new(None)),
-            visualization: Arc::new(Mutex::new(None)),
-            visualization_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -349,8 +342,6 @@ impl AudioEngine {
             state.tuner_level_db = -120.0;
         }
         self.health.reset();
-        // Drop any stale Scope frame so the display returns to idle on restart.
-        *self.visualization.lock() = None;
         {
             let mut mm = self.model_manager.lock();
             mm.clear_fade();
@@ -386,8 +377,6 @@ impl AudioEngine {
         let model_manager = Arc::clone(&self.model_manager);
         let state = Arc::clone(&self.state);
         let ir = Arc::clone(&self.ir);
-        let visualization = Arc::clone(&self.visualization);
-        let visualization_enabled = Arc::clone(&self.visualization_enabled);
         let sample_rate = output_sample_rate as f32;
 
         // Input callback: take the first channel (mono guitar input) and push it to
@@ -435,10 +424,6 @@ impl AudioEngine {
                 let mut gate_env = 0.0_f32;
                 let mut gate_gain = 1.0_f32;
                 let mut tuner = Tuner::new(sample_rate);
-                // Visualization is a read-only tap on the final output; all of its
-                // work happens after the block is handed to the output ring.
-                let mut visualizer = Visualizer::new(sample_rate);
-                let mut was_enabled = false;
 
                 while !stop_flag.load(Ordering::Relaxed) {
                     if raw_consumer.occupied_len() == 0 {
@@ -593,27 +578,6 @@ impl AudioEngine {
                     }
 
                     out_producer.push_slice(&buffer[..got]);
-
-                    // The block is already in the output ring: visualization work
-                    // from here on cannot delay samples reaching the device.
-                    let enabled = visualization_enabled.load(Ordering::Relaxed);
-                    if enabled != was_enabled {
-                        was_enabled = enabled;
-                        if enabled {
-                            visualizer.prepare(sample_rate);
-                        } else {
-                            *visualization.lock() = None;
-                        }
-                    }
-                    if enabled {
-                        if let Some(frame) = visualizer.push(&buffer[..got]) {
-                            // Never block the audio thread on the UI: drop this
-                            // frame if the polling command holds the lock.
-                            if let Some(mut guard) = visualization.try_lock() {
-                                *guard = Some(frame);
-                            }
-                        }
-                    }
                 }
             })
             .map_err(|e| format!("Failed to spawn DSP thread: {}", e))?;
@@ -719,7 +683,6 @@ impl AudioEngine {
             let mut state = self.state.lock();
             state.powered = false;
         }
-        *self.visualization.lock() = None;
         log::info!("Audio engine stopped");
     }
 
@@ -843,19 +806,6 @@ impl AudioEngine {
     pub fn tuner(&self) -> (f32, f32) {
         let state = self.state.lock();
         (state.tuner_hz, state.tuner_level_db)
-    }
-
-    /// Latest visualization snapshot, or `None` while disabled / powered off.
-    pub fn visualization(&self) -> Option<VisualizationFrame> {
-        self.visualization.lock().clone()
-    }
-
-    /// Enable or disable the Scope's DSP work. Never restarts the streams.
-    pub fn set_visualization_enabled(&self, enabled: bool) {
-        self.visualization_enabled.store(enabled, Ordering::Relaxed);
-        if !enabled {
-            *self.visualization.lock() = None;
-        }
     }
 
     /// Set the DSP pipeline latency. Takes effect immediately by restarting the

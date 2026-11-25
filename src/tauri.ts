@@ -112,23 +112,6 @@ export async function getTuner(): Promise<TunerStatus> {
   return invoke('get_tuner');
 }
 
-export interface VisualizationFrame {
-  waveform: number[];
-  spectrum: number[];
-  levelDb: number;
-  peakDb: number;
-}
-
-/** `null` while the Scope is closed, the amp is off, or before the first frame. */
-export async function getVisualization(): Promise<VisualizationFrame | null> {
-  return invoke('get_visualization');
-}
-
-/** Gates the DSP work at source; called when the popup opens/closes and on power changes. */
-export async function setVisualizationEnabled(enabled: boolean): Promise<void> {
-  return invoke('set_visualization_enabled', { enabled });
-}
-
 export async function togglePower(): Promise<boolean> {
   return invoke('toggle_power');
 }
@@ -179,6 +162,21 @@ export async function loadPreset(name: string): Promise<PresetPayload> {
 /** Restore an arbitrary rig's NAM/IR from the local asset library (audition revert). */
 export async function loadRigAssets(rig: RigSnapshot): Promise<void> {
   return invoke('load_rig_assets', { rig });
+}
+
+/** Read-only preset payload (no engine side effects). */
+export async function getPreset(name: string): Promise<PresetPayload> {
+  return invoke('get_preset', { name });
+}
+
+/** Relocate a preset to another bank/slot, replacing the occupant if allowed. */
+export async function movePreset(
+  name: string,
+  bank: string,
+  slot: number,
+  replace: boolean,
+): Promise<void> {
+  return invoke('move_preset', { name, bank, slot, replace });
 }
 
 export async function deletePreset(name: string): Promise<void> {

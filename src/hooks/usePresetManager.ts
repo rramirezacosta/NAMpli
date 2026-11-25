@@ -5,10 +5,12 @@ import { notifyError, notifySuccess } from '../notifications';
 import {
   deletePreset,
   exportPreset,
+  getPreset,
   importPreset,
   listPresets,
   loadPreset,
   loadRigAssets,
+  movePreset,
   renamePreset,
   savePreset,
 } from '../tauri';
@@ -37,9 +39,12 @@ function sameAsset(a: RigSnapshot['model'], b: RigSnapshot['model']): boolean {
   return a.id === b.id && a.name === b.name;
 }
 
+/** Knob setters round-trip through f32 in the backend, so allow tiny drift. */
+const KNOB_EPSILON = 1e-4;
+
 function sameRig(a: RigSnapshot, b: RigSnapshot): boolean {
   return (
-    KNOB_KEYS.every((key) => a[key] === b[key]) &&
+    KNOB_KEYS.every((key) => Math.abs(a[key] - b[key]) <= KNOB_EPSILON) &&
     sameAsset(a.model, b.model) &&
     sameAsset(a.ir, b.ir)
   );
@@ -76,6 +81,11 @@ export function usePresetManager(
     void refresh();
   }, [refresh]);
 
+  /**
+   * "Dirty = would Save change anything?" For a saved preset we compare against
+   * its recalled rig; for an empty slot the baseline is a blank preset
+   * (DEFAULT_RIG), so the dot appears once the working state differs from it.
+   */
   const dirty = !sameRig(snapshot, baseline);
 
   const metaAt = useCallback(
@@ -136,10 +146,11 @@ export function usePresetManager(
       setBank(targetBank);
       setSlot(targetSlot);
       setActiveName(null);
-      setBaseline({ ...snapshot, model: null, ir: null });
+      // An empty slot compares against a blank preset, not the current knobs.
+      setBaseline(DEFAULT_RIG);
       void clearModelAndIr();
     },
-    [snapshot, clearModelAndIr, beginPreview],
+    [clearModelAndIr, beginPreview],
   );
 
   /** Keep the auditioned sound as the current working state. */
@@ -224,11 +235,11 @@ export function usePresetManager(
   );
 
   const rename = useCallback(
-    async (sourceName: string, newName: string) => {
+    async (sourceName: string, newName: string): Promise<boolean> => {
       const clean = newName.trim();
       if (!clean) {
         notifyError('Enter a preset name first.');
-        return;
+        return false;
       }
       setBusy(true);
       try {
@@ -241,14 +252,90 @@ export function usePresetManager(
           setPreview(updated);
         }
         notifySuccess(`Renamed to ${clean}`);
+        return true;
       } catch (err) {
         console.error('Failed to rename preset:', err);
         notifyError(`Could not rename preset: ${err}`);
+        return false;
       } finally {
         setBusy(false);
       }
     },
     [activeName, refresh],
+  );
+
+  /** Relocate a preset to another bank/slot. */
+  const move = useCallback(
+    async (name: string, targetBank: Bank, targetSlot: number): Promise<boolean> => {
+      const occupant = metaAt(targetBank, targetSlot);
+      if (
+        occupant &&
+        occupant.name !== name &&
+        !window.confirm(`Replace "${occupant.name}" in ${targetBank}${targetSlot}?`)
+      ) {
+        return false;
+      }
+      setBusy(true);
+      try {
+        await movePreset(name, targetBank, targetSlot, !!occupant && occupant.name !== name);
+        await refresh();
+        if (activeName === name) {
+          setBank(targetBank);
+          setSlot(targetSlot);
+        }
+        notifySuccess(`Moved ${name} to ${targetBank}${targetSlot}`);
+        return true;
+      } catch (err) {
+        console.error('Failed to move preset:', err);
+        notifyError(`Could not move preset: ${err}`);
+        return false;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [metaAt, refresh, activeName],
+  );
+
+  /** Duplicate a preset into another slot under a fresh, unique name. */
+  const copy = useCallback(
+    async (name: string, targetBank: Bank, targetSlot: number): Promise<string | null> => {
+      setBusy(true);
+      try {
+        const source = await getPreset(name);
+        const used = new Set(metas.map((meta) => meta.name));
+        let newName = `${source.name} copy`;
+        let suffix = 2;
+        while (used.has(newName)) newName = `${source.name} copy ${suffix++}`;
+
+        const occupant = metaAt(targetBank, targetSlot);
+        if (
+          occupant &&
+          !window.confirm(`Replace "${occupant.name}" in ${targetBank}${targetSlot}?`)
+        ) {
+          return null;
+        }
+        if (occupant) await deletePreset(occupant.name);
+
+        await savePreset({
+          schemaVersion: 1,
+          name: newName,
+          bank: targetBank,
+          slot: targetSlot,
+          updatedAt: Date.now(),
+          rig: source.rig,
+        });
+        await refresh();
+        notifySuccess(`Copied ${name} to ${targetBank}${targetSlot} as ${newName}`);
+        return newName;
+      } catch (err) {
+        console.error('Failed to copy preset:', err);
+        notifyError(`Could not copy preset: ${err}`);
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [metas, metaAt, refresh],
   );
 
   const remove = useCallback(
@@ -322,6 +409,8 @@ export function usePresetManager(
     selectAt,
     save,
     rename,
+    move,
+    copy,
     remove,
     exportJson,
     importJson,

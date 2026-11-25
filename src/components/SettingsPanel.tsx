@@ -14,10 +14,6 @@ import './SettingsPanel.css';
 interface SettingsPanelProps {
   open: boolean;
   onClose: () => void;
-  backgroundEnabled: boolean;
-  backgroundIntensity: number;
-  onSetBackgroundEnabled: (enabled: boolean) => void;
-  onSetBackgroundIntensity: (intensity: number) => void;
 }
 
 const BUFFER_SIZE_OPTIONS = [
@@ -38,10 +34,6 @@ const BUFFER_SIZE_OPTIONS = [
 export default function SettingsPanel({
   open: isOpen,
   onClose,
-  backgroundEnabled,
-  backgroundIntensity,
-  onSetBackgroundEnabled,
-  onSetBackgroundIntensity,
 }: SettingsPanelProps) {
   const [hosts, setHosts] = useState<string[]>([]);
   const [selectedHost, setSelectedHost] = useState<string>('');
@@ -269,42 +261,6 @@ export default function SettingsPanel({
           </div>
         </div>
 
-        <div className="settings-section">
-          <h3>Visualization</h3>
-
-          <div className="setting-row">
-            <label className="setting-label" htmlFor="background-visualization-enabled">
-              Background visualization
-            </label>
-            <input
-              id="background-visualization-enabled"
-              className="settings-checkbox"
-              type="checkbox"
-              checked={backgroundEnabled}
-              onChange={(e) => onSetBackgroundEnabled(e.target.checked)}
-            />
-            <span className="setting-value">
-              Ambient waveform and spectrum behind the faceplate.
-            </span>
-          </div>
-
-          <div className="setting-row">
-            <label className="setting-label" htmlFor="background-visualization-intensity">
-              Intensity
-            </label>
-            <input
-              id="background-visualization-intensity"
-              className="settings-range"
-              type="range"
-              min={0}
-              max={100}
-              value={backgroundIntensity}
-              disabled={!backgroundEnabled}
-              onChange={(e) => onSetBackgroundIntensity(Number(e.target.value))}
-            />
-            <span className="setting-value">{backgroundIntensity}%</span>
-          </div>
-        </div>
       </div>
     </div>
   );
