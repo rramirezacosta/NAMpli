@@ -7,6 +7,7 @@ export default function TunerIcon({ onClick }: TunerIconProps) {
     <button
       className="tool-button"
       onClick={onClick}
+      data-tuner-trigger
       aria-label="Tuner"
       title="Tuner"
     >

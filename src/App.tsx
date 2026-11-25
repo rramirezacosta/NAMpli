@@ -37,8 +37,8 @@ function log(...args: unknown[]) {
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const [showTuner, setShowTuner] = useState(false);
   // Library and tuner are full-window views, not overlays.
+  const [view, setView] = useState<'amp' | 'library' | 'tuner'>('amp');
   const [assetSelection, setAssetSelection] = useState<string | null>(null);
 
   // Drag-and-drop state for unnamed mode
@@ -48,11 +48,9 @@ function App() {
   // Confirmation dialog state for NAM files
   const [pendingNam, setPendingNam] = useState<PendingNam | null>(null);
 
-  const tunerPopupRef = useRef<HTMLDivElement>(null);
   const confirmDialogRef = useRef<HTMLDivElement>(null);
 
   const closeSettings = () => setShowSettings(false);
-  const closeTuner = () => setShowTuner(false);
   const openLibrary = () => setView('library');
   const backToAmp = useCallback((from: 'library' | 'tuner' = 'library') => {
     setView('amp');
@@ -61,7 +59,7 @@ function App() {
       document.querySelector<HTMLButtonElement>(trigger)?.focus();
     });
   }, []);
-  const openTuner = () => setShowTuner(true);
+  const openTuner = () => setView('tuner');
 
   const rig = useRigState();
   const presetManager = usePresetManager(rig.snapshot, rig.applySnapshot, rig.clearModelAndIr);
@@ -177,7 +175,6 @@ function App() {
     }
   };
 
-  useDialogFocus(showTuner, closeTuner, tunerPopupRef);
   useDialogFocus(!!pendingNam, handleCancelLoadNam, confirmDialogRef);
 
   // Key precedence: Esc reverts an audition, otherwise leaves the current view.
@@ -401,24 +398,6 @@ function App() {
         </div>
       )}
       <SettingsPanel open={showSettings} onClose={closeSettings} />
-      {showTuner && (
-        <div className="tuner-popup-overlay" onClick={closeTuner}>
-          <div
-            className="tuner-popup"
-            ref={tunerPopupRef}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Tuner"
-            tabIndex={-1}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Tuner powered={settings.powerOn} />
-            <button className="tuner-popup-close" onClick={closeTuner}>
-              Close
-            </button>
-          </div>
-        </div>
-      )}
       {/* Drop zone overlay */}
       {dragOver && (
         <div className="drop-zone-overlay">
@@ -456,6 +435,8 @@ function App() {
           </div>
         </div>
       )}
+        {view === 'tuner' ? (
+          <Tuner powered={settings.powerOn} onBack={() => backToAmp('tuner')} />
         ) : view === 'library' ? (
           <AssetLibrary
             assets={assetLibrary.assets}

@@ -115,53 +115,6 @@
   outline-offset: -2px;
 }
 
-.tuner-popup-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.55);
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 40px 12px 0 0;
-  z-index: 300;
-}
-
-.tuner-popup {
-  background: rgba(16, 16, 16, 0.96);
-  border: 1px solid var(--gold-line);
-  border-radius: var(--radius);
-  padding: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-}
-
-.tuner-popup .tuner {
-  position: static;
-  opacity: 1;
-  pointer-events: auto;
-  top: auto;
-  left: auto;
-  width: 220px;
-}
-
-.tuner-popup-close {
-  display: block;
-  margin: 8px auto 0;
-  padding: 4px 12px;
-  min-height: 26px;
-  background: transparent;
-  border: 1px solid rgba(212, 175, 55, 0.4);
-  color: var(--gold);
-  border-radius: 4px;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.75rem;
-}
-
-.tuner-popup-close:hover {
-  background: var(--gold-soft);
-  border-color: rgba(212, 175, 55, 0.7);
-}
-
 /* Drop zone overlay for unnamed mode */
 .drop-zone-overlay {
   position: fixed;
