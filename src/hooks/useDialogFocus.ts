@@ -4,7 +4,8 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * Dialog plumbing shared by Settings, Library, Tuner and the NAM confirmation:
+ * Dialog plumbing shared by Settings, the NAM confirmation, the preset name
+ * dialog and the full-rig preset editor:
  * moves focus inside on open, traps Tab, closes on Escape and restores focus
  * to the element that opened the dialog when it closes.
  */
@@ -27,7 +28,13 @@ export function useDialogFocus(
         (el) => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true',
       );
 
-    (focusable()[0] ?? containerRef.current)?.focus();
+    // Prefer the markup's explicit autofocus (e.g. the preset name field),
+    // otherwise fall back to the first focusable control.
+    (
+      containerRef.current?.querySelector<HTMLElement>('[autofocus], [data-autofocus]') ??
+      focusable()[0] ??
+      containerRef.current
+    )?.focus();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {

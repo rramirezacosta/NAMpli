@@ -64,7 +64,7 @@ function App() {
   const openTuner = () => setShowTuner(true);
 
   const rig = useRigState();
-  const presetManager = usePresetManager(rig.snapshot(), rig.applySnapshot, rig.clearModelAndIr);
+  const presetManager = usePresetManager(rig.snapshot, rig.applySnapshot, rig.clearModelAndIr);
   const { refresh: refreshPresets } = presetManager;
   const {
     settings,
@@ -108,6 +108,18 @@ function App() {
   /** Extract the file name from a path reported by Tauri's native drop event. */
   const fileNameFromPath = (path: string) =>
     path.split(/[\\/]/).pop() ?? path;
+  /** Starting a preset audition commits any pending asset preview first. */
+  const presetManagerForAmp = useMemo(() => ({
+    ...presetManager,
+    recallAt: (bank: Bank, slot: number) => {
+      if (assetLibrary.preview) assetLibrary.commitPreview();
+      return presetManager.recallAt(bank, slot);
+    },
+    selectAt: (bank: Bank, slot: number) => {
+      if (assetLibrary.preview) assetLibrary.commitPreview();
+      presetManager.selectAt(bank, slot);
+    },
+  }), [presetManager, assetLibrary]);
 
   /**
    * Process a dropped file path: import a copy into the preset asset library and
@@ -183,6 +195,24 @@ function App() {
         else if (assetPreview) void assetLibrary.revertPreview();
         else if (view !== 'amp') backToAmp(view === 'tuner' ? 'tuner' : 'library');
         return;
+      }
+      // Number keys audition the matching slot in the bank currently on screen.
+      // Use the amp wrapper so a pending asset preview is committed first.
+      if (
+        view === 'amp' &&
+        !presetManager.busy &&
+        !event.ctrlKey && !event.metaKey && !event.altKey &&
+        /^[1-4]$/.test(event.key) &&
+        !(
+          target &&
+          (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable)
+        )
+      ) {
+        event.preventDefault();
+        const slot = Number(event.key);
+        const { bank, metaAt, recallAt, selectAt } = presetManagerForAmp;
+        if (metaAt(bank, slot)) void recallAt(bank, slot);
+        else selectAt(bank, slot);
         return;
       }
       if (event.key !== 'Enter') return;
@@ -454,11 +484,11 @@ function App() {
             outputVolume={settings.outputVolume}
             reverb={settings.reverb}
             powerOn={settings.powerOn}
+            previewing={!!presetManager.preview || !!assetPreview}
             modelName={rig.model?.name ?? null}
             irName={rig.ir?.name ?? null}
-            presetManager={presetManager}
-            onOpenLibrary={openLibrary}
             meters={meters}
+            presetManager={presetManagerForAmp}
             onTogglePower={togglePower}
             onSetInputVolume={setInputVolume}
             onSetGate={setGate}

@@ -15,11 +15,11 @@ interface AmpPanelProps {
   outputVolume: number;
   reverb: number;
   powerOn: boolean;
+  previewing: boolean;
   modelName: string | null;
   irName: string | null;
   meters: MeterSnapshot | null;
   presetManager: PresetManager;
-  onOpenLibrary: () => void;
   onTogglePower: () => void;
   onSetInputVolume: (v: number) => void;
   onSetGate: (v: number) => void;
@@ -62,7 +62,7 @@ export default function AmpPanel({
     <div className={`amp-panel ${powerOn ? 'power-on' : 'power-off'}`}>
       {/* Presets are the primary interaction surface, so they lead the panel. */}
       <div className="preset-rail">
-        <PresetBar manager={presetManager} onOpenLibrary={onOpenLibrary} />
+        <PresetBar manager={presetManager} />
       </div>
 
       <div className="panel-header">
@@ -72,6 +72,11 @@ export default function AmpPanel({
             <span className={`state-pill ${state}`} title={stateLabel}>
               {stateLabel}
             </span>
+            {previewing && (
+              <span className="state-pill preview" title="Auditioning — not saved yet">
+                PREVIEW
+              </span>
+            )}
             <span className="readout-item" title={modelLabel}>
               MODEL: {modelLabel}
             </span>

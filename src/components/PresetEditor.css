@@ -1,0 +1,138 @@
+.preset-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  width: min(440px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+}
+
+.preset-editor h3 {
+  margin: 0;
+  color: var(--gold);
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+}
+
+.preset-editor-hint {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.preset-editor-error {
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+
+.preset-editor-loading {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 0.5rem 0;
+}
+
+.preset-editor > label,
+.preset-editor-asset label {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.preset-editor > input[type='text'],
+.preset-editor > input:not([type]),
+.preset-editor-asset select {
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.preset-editor-section-title {
+  margin-top: 0.3rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--gold-line);
+  color: var(--gold);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+.preset-editor-knobs {
+  display: grid;
+  gap: 6px 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preset-editor-knob {
+  display: grid;
+  grid-template-columns: 58px 1fr 32px;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.preset-editor-knob input {
+  width: 100%;
+  accent-color: var(--gold);
+}
+
+.preset-editor-knob output {
+  color: var(--gold-bright);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.preset-editor-assets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.preset-editor-asset {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preset-editor-asset-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preset-editor-asset-head button {
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--gold-line);
+  border-radius: 3px;
+  color: var(--gold);
+  font-family: inherit;
+  font-size: 0.68rem;
+  cursor: pointer;
+}
+
+.preset-editor-asset-head button:hover:not(:disabled) {
+  color: var(--gold-bright);
+  border-color: rgba(212, 175, 55, 0.6);
+}
+
+.preset-editor-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+/* .btn / .btn-primary from App.css supply the button chrome. */
+
+.preset-editor-buttons button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}

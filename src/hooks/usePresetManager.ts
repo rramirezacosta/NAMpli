@@ -1,16 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Bank, PresetMeta, PresetPayload, RigSnapshot } from '../types/preset';
-import { DEFAULT_RIG } from '../types/preset';
+import { DEFAULT_RIG, slotLabel } from '../types/preset';
 import { notifyError, notifySuccess } from '../notifications';
 import {
   deletePreset,
-  exportPreset,
-  getPreset,
-  importPreset,
   listPresets,
   loadPreset,
   loadRigAssets,
-  movePreset,
   renamePreset,
   savePreset,
 } from '../tauri';
@@ -41,6 +37,11 @@ function sameAsset(a: RigSnapshot['model'], b: RigSnapshot['model']): boolean {
 
 /** Knob setters round-trip through f32 in the backend, so allow tiny drift. */
 const KNOB_EPSILON = 1e-4;
+
+/** Only front-panel knob edits trigger auto-save; asset changes are explicit. */
+function sameKnobs(a: RigSnapshot, b: RigSnapshot): boolean {
+  return KNOB_KEYS.every((key) => Math.abs(a[key] - b[key]) <= KNOB_EPSILON);
+}
 
 function sameRig(a: RigSnapshot, b: RigSnapshot): boolean {
   return (
@@ -94,6 +95,23 @@ export function usePresetManager(
     [metas],
   );
 
+  /** Push a rig to the live sound without reloading NAM/IR (knob-only edits). */
+  const applyRig = useCallback((rig: RigSnapshot) => applySnapshot(rig), [applySnapshot]);
+
+  /** Push a rig plus its NAM/IR into the engine (asset edits and editor cancel). */
+  const applyLiveRig = useCallback(
+    async (rig: RigSnapshot) => {
+      try {
+        await loadRigAssets(rig);
+      } catch (err) {
+        console.error('Failed to load rig assets:', err);
+        notifyError(`Could not load preset assets: ${err}`);
+      }
+      applySnapshot(rig);
+    },
+    [applySnapshot],
+  );
+
   /** Remember the sound we are leaving so an audition can always be undone. */
   const beginPreview = useCallback(() => {
     if (previewRef.current) return;
@@ -133,8 +151,6 @@ export function usePresetManager(
     },
     [metaAt, applySnapshot, beginPreview],
   );
-
-  const recall = useCallback(() => recallAt(bank, slot), [recallAt, bank, slot]);
 
   /**
    * Select an empty slot: it holds no NAM or IR, so load bypass (keep the knob
@@ -185,7 +201,7 @@ export function usePresetManager(
   }, [applySnapshot]);
 
   const save = useCallback(
-    async (name?: string, targetBank: Bank = bank, targetSlot: number = slot) => {
+    async (name?: string, targetBank: Bank = bank, targetSlot: number = slot, silent = false) => {
       const finalName = (name ?? activeName ?? `Preset ${targetBank}${targetSlot}`).trim();
       if (!finalName) {
         notifyError('Enter a preset name first.');
@@ -222,7 +238,7 @@ export function usePresetManager(
         // Saving means the sound is no longer a preview.
         previewRef.current = null;
         setPreview(null);
-        notifySuccess(`Saved ${finalName}`);
+        if (!silent) notifySuccess(`Saved ${finalName}`);
       } catch (err) {
         console.error('Failed to save preset:', err);
         notifyError(`Could not save preset: ${err}`);
@@ -233,6 +249,20 @@ export function usePresetManager(
     },
     [activeName, bank, slot, metaAt, snapshot, refresh],
   );
+
+  /**
+   * Knob edits are persisted to the active preset automatically. The debounce
+   * coalesces a knob drag into one write; auditions are excluded so Revert
+   * still restores the stored preset.
+   */
+  useEffect(() => {
+    if (!activeName || preview || busy) return;
+    if (sameKnobs(snapshot, baseline)) return;
+    const timer = window.setTimeout(() => {
+      void save(activeName, bank, slot, true);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [activeName, bank, slot, preview, busy, snapshot, baseline, save]);
 
   const rename = useCallback(
     async (sourceName: string, newName: string): Promise<boolean> => {
@@ -264,78 +294,51 @@ export function usePresetManager(
     [activeName, refresh],
   );
 
-  /** Relocate a preset to another bank/slot. */
-  const move = useCallback(
-    async (name: string, targetBank: Bank, targetSlot: number): Promise<boolean> => {
-      const occupant = metaAt(targetBank, targetSlot);
-      if (
-        occupant &&
-        occupant.name !== name &&
-        !window.confirm(`Replace "${occupant.name}" in ${targetBank}${targetSlot}?`)
-      ) {
+  /**
+   * Full-rig edit: write an arbitrary stored payload in place. Unlike save(),
+   * this never touches the live snapshot or the audition backup. The live sound
+   * only changes when the user recalls the edited preset.
+   */
+  const update = useCallback(
+    async (source: string, next: PresetPayload): Promise<boolean> => {
+      const clean = next.name.trim();
+      if (!clean) {
+        notifyError('Enter a preset name first.');
         return false;
       }
+      // Renaming must happen first: writing the new name while the old file
+      // still occupies the same slot would be rejected by the backend.
+      const renamed = clean !== source;
       setBusy(true);
       try {
-        await movePreset(name, targetBank, targetSlot, !!occupant && occupant.name !== name);
+        if (renamed) await renamePreset(source, clean);
+        await savePreset({ ...next, name: clean });
         await refresh();
-        if (activeName === name) {
-          setBank(targetBank);
-          setSlot(targetSlot);
-        }
-        notifySuccess(`Moved ${name} to ${targetBank}${targetSlot}`);
+        // The editor previews the edited rig live, so saving makes it the
+        // current, clean sound rather than leaving a phantom "unsaved" dot.
+        setActiveName(clean);
+        setBaseline(next.rig);
+        previewRef.current = null;
+        setPreview(null);
+        notifySuccess(`Updated ${slotLabel(next.bank, next.slot)} · ${clean}`);
         return true;
       } catch (err) {
-        console.error('Failed to move preset:', err);
-        notifyError(`Could not move preset: ${err}`);
+        console.error('Failed to update preset:', err);
+        if (renamed) {
+          try {
+            await renamePreset(clean, source);
+          } catch (rollbackErr) {
+            console.error('Failed to roll back preset rename:', rollbackErr);
+          }
+        }
+        notifyError(`Could not update preset: ${err}`);
+        await refresh();
         return false;
       } finally {
         setBusy(false);
       }
     },
-    [metaAt, refresh, activeName],
-  );
-
-  /** Duplicate a preset into another slot under a fresh, unique name. */
-  const copy = useCallback(
-    async (name: string, targetBank: Bank, targetSlot: number): Promise<string | null> => {
-      setBusy(true);
-      try {
-        const source = await getPreset(name);
-        const used = new Set(metas.map((meta) => meta.name));
-        let newName = `${source.name} copy`;
-        let suffix = 2;
-        while (used.has(newName)) newName = `${source.name} copy ${suffix++}`;
-
-        const occupant = metaAt(targetBank, targetSlot);
-        if (
-          occupant &&
-          !window.confirm(`Replace "${occupant.name}" in ${targetBank}${targetSlot}?`)
-        ) {
-          return null;
-        }
-        if (occupant) await deletePreset(occupant.name);
-
-        await savePreset({
-          schemaVersion: 1,
-          name: newName,
-          bank: targetBank,
-          slot: targetSlot,
-          updatedAt: Date.now(),
-          rig: source.rig,
-        });
-        await refresh();
-        notifySuccess(`Copied ${name} to ${targetBank}${targetSlot} as ${newName}`);
-        return newName;
-      } catch (err) {
-        console.error('Failed to copy preset:', err);
-        notifyError(`Could not copy preset: ${err}`);
-        return null;
-      } finally {
-        setBusy(false);
-      }
-    },
-    [metas, metaAt, refresh],
+    [refresh],
   );
 
   const remove = useCallback(
@@ -364,56 +367,27 @@ export function usePresetManager(
     [activeName, refresh],
   );
 
-  const exportJson = useCallback(async () => {
-    if (!activeName) {
-      notifyError('Select a preset first.');
-      return null;
-    }
-    try {
-      return await exportPreset(activeName);
-    } catch (err) {
-      notifyError(`Could not export preset: ${err}`);
-      return null;
-    }
-  }, [activeName]);
-
-  const importJson = useCallback(
-    async (json: string) => {
-      try {
-        await importPreset(json);
-        await refresh();
-        notifySuccess('Preset imported');
-      } catch (err) {
-        console.error('Failed to import preset:', err);
-        notifyError(`Could not import preset: ${err}`);
-      }
-    },
-    [refresh],
-  );
-
   return {
     metas,
     bank,
     slot,
     activeName,
+    liveSnapshot: snapshot,
+    applyRig,
+    applyLiveRig,
     dirty,
     busy,
     preview,
     commitPreview,
     revertPreview,
     setBank,
-    setSlot,
     metaAt,
-    recall,
     recallAt,
     selectAt,
     save,
     rename,
-    move,
-    copy,
+    update,
     remove,
-    exportJson,
-    importJson,
     refresh,
   };
 }

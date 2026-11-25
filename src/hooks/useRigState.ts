@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { AmpSettings } from '../types/amp';
 import { DEFAULT_SETTINGS } from '../types/amp';
 import type { AssetRef, RigSnapshot } from '../types/preset';
@@ -107,8 +107,10 @@ export function useRigState() {
     }
   }, []);
 
-  const snapshot = useCallback(
-    (): RigSnapshot => ({
+  // Memoised so unrelated UI re-renders (meter polling, status updates) do not
+  // produce a fresh object and restart the preset auto-save debounce.
+  const snapshot = useMemo<RigSnapshot>(
+    () => ({
       inputVolume: settings.inputVolume,
       gate: settings.gate,
       bass: settings.bass,
