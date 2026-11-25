@@ -1,7 +1,7 @@
-/** Two banks of four recall slots, like a regular DSP rig footswitch board. */
-export type Bank = 'A' | 'B';
+/** Four banks of four recall slots, like a regular DSP rig footswitch board. */
+export type Bank = 'A' | 'B' | 'C' | 'D';
 
-export const BANKS: Bank[] = ['A', 'B'];
+export const BANKS: Bank[] = ['A', 'B', 'C', 'D'];
 export const SLOTS = [1, 2, 3, 4];
 
 /** A NAM or IR file stored in the backend's local asset library. */

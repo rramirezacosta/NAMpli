@@ -7,9 +7,11 @@
   z-index: 2;
 }
 
+/* Four banks in a compact 2x2 grid so the strip keeps the same height as the slots. */
 .preset-bank-toggle {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
   gap: 3px;
 }
 
@@ -22,7 +24,6 @@
 }
 
 .preset-bank-btn {
-  flex: 1;
   min-width: 30px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid var(--gold-line);

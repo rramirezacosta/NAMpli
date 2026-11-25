@@ -531,7 +531,7 @@ fn save_index(app: &AppHandle, index: &PresetIndex) -> Result<(), String> {
 }
 
 /// Reconcile the index with the files on disk, migrating legacy presets. New
-/// files are assigned the next free slot in the 2x4 grid.
+/// files are assigned the next free slot in the 4x4 grid (banks A-D, slots 1-4).
 fn sync_index(app: &AppHandle) -> Result<PresetIndex, String> {
     let dir = presets_dir(app)?;
     let mut index = load_index(app)?;
@@ -563,8 +563,8 @@ fn sync_index(app: &AppHandle) -> Result<PresetIndex, String> {
     let mut cursor = 0usize;
     for name in files {
         let mut assigned: Option<(String, u8)> = None;
-        while cursor < 8 {
-            let bank = if cursor < 4 { "A" } else { "B" };
+        while cursor < 16 {
+            let bank = ["A", "B", "C", "D"][cursor / 4];
             let slot = (cursor % 4 + 1) as u8;
             cursor += 1;
             if !used.contains(&(bank.to_string(), slot)) {
@@ -572,7 +572,7 @@ fn sync_index(app: &AppHandle) -> Result<PresetIndex, String> {
                 break;
             }
         }
-        // More than 8 presets: keep them in the library with an out-of-grid slot.
+        // More than 16 presets: keep them in the library with an out-of-grid slot.
         let (bank, slot) = assigned.unwrap_or_else(|| ("A".to_string(), 100 + used.len() as u8));
         used.push((bank.clone(), slot));
         index.entries.push(PresetIndexEntry { name, bank, slot });
@@ -630,7 +630,7 @@ fn write_preset(app: &AppHandle, preset: &PresetPayload) -> Result<(), String> {
     if safe.is_empty() {
         return Err("Preset name is empty".into());
     }
-    if !matches!(preset.bank.as_str(), "A" | "B") {
+    if !matches!(preset.bank.as_str(), "A" | "B" | "C" | "D") {
         return Err(format!("Unknown bank '{}'", preset.bank));
     }
     if !(1..=4).contains(&preset.slot) {
@@ -688,6 +688,33 @@ pub fn save_preset(app: AppHandle, preset: PresetPayload) -> Result<(), String> 
     write_preset(&app, &preset)
 }
 
+/// Load (or clear) the NAM and IR referenced by a rig snapshot into the engine.
+/// Shared by preset recall, snapshot recall and audition revert so all three
+/// restore the *audio* state as well as the React/knob state.
+fn apply_rig_assets(
+    app: &AppHandle,
+    engine: &mut AudioEngine,
+    rig: &RigSnapshot,
+) -> Result<(), String> {
+    match &rig.model {
+        Some(asset) => {
+            let path = resolve_asset_path(app, &asset.id)?;
+            let bytes = std::fs::read(&path)
+                .map_err(|e| format!("Could not read preset NAM '{}': {}", asset.name, e))?;
+            engine.load_nam_from_bytes(&asset.name, bytes)?;
+        }
+        None => engine.clear_nam(),
+    }
+    match &rig.ir {
+        Some(asset) => {
+            let path = resolve_asset_path(app, &asset.id)?;
+            engine.load_ir(&path.to_string_lossy())?;
+        }
+        None => engine.clear_ir(),
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub fn load_preset(
     app: AppHandle,
@@ -695,25 +722,21 @@ pub fn load_preset(
     name: String,
 ) -> Result<PresetPayload, String> {
     let preset = read_preset(&app, &name)?;
-    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
-
-    match &preset.rig.model {
-        Some(asset) => {
-            let path = resolve_asset_path(&app, &asset.id)?;
-            let bytes = std::fs::read(&path).map_err(|e| format!("Could not read preset NAM: {}", e))?;
-            engine.load_nam_from_bytes(&asset.name, bytes)?;
-        }
-        None => engine.clear_nam(),
-    }
-    match &preset.rig.ir {
-        Some(asset) => {
-            let path = resolve_asset_path(&app, &asset.id)?;
-            engine.load_ir(&path.to_string_lossy())?;
-        }
-        None => engine.clear_ir(),
-    }
-
+    let mut engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    apply_rig_assets(&app, &mut engine, &preset.rig)?;
     Ok(preset)
+}
+
+/// Restore an arbitrary rig's NAM/IR from the local asset library. Used when an
+/// audition is reverted to unsaved working state.
+#[tauri::command]
+pub fn load_rig_assets(
+    app: AppHandle,
+    engine: State<'_, StdMutex<AudioEngine>>,
+    rig: RigSnapshot,
+) -> Result<(), String> {
+    let mut engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    apply_rig_assets(&app, &mut engine, &rig)
 }
 
 #[tauri::command]

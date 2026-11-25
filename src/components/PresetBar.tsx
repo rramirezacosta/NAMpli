@@ -88,6 +88,8 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
             className={`preset-bank-btn ${manager.bank === b ? 'active' : ''}`}
             onClick={() => manager.setBank(b)}
             type="button"
+            aria-label={`Bank ${b}`}
+            title={`Bank ${b} — switch bank`}
           >
             {b}
           </button>
@@ -152,13 +154,6 @@ export default function PresetBar({ manager, onOpenLibrary }: PresetBarProps) {
           disabled={manager.busy}
         >
           Save
-        </button>
-        <button
-          type="button"
-          className={`preset-action-btn ${manager.comparing ? 'active' : ''}`}
-          onClick={() => void manager.compare()}
-        >
-          {manager.comparing ? 'Restore' : 'A/B'}
         </button>
         <button type="button" className="preset-action-btn" onClick={onOpenLibrary}>
           Library

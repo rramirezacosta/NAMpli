@@ -61,6 +61,7 @@ pub fn run() {
             commands::list_presets,
             commands::save_preset,
             commands::load_preset,
+            commands::load_rig_assets,
             commands::delete_preset,
             commands::rename_preset,
             commands::export_preset,

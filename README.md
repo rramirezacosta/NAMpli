@@ -4,14 +4,17 @@ NAMpli is a Tauri desktop app for playing NAM guitar amp captures with a cabinet
 
 ## Preset manager
 
-The main panel has a DSP-style preset board with two banks (A/B) and four slots each:
+The main panel has a DSP-style preset board with four banks (A/B/C/D) and four slots each:
 
-- **Click a slot** to recall its knobs, NAM model and IR. Empty slots are selectable too — clicking one
-  loads bypass (clears the NAM and IR, keeping the knob positions) and makes it the Save target. Presets
-  saved with no NAM/IR likewise recall as bypass.
+- **Click a slot** to audition its knobs, NAM model and IR immediately. Empty slots are selectable too —
+  clicking one auditions bypass (clears the NAM and IR, keeping the knob positions) and makes it the Save
+  target. Presets saved with no NAM/IR likewise recall as bypass.
+- **Audition** can be undone: a banner shows the preset being previewed. **Esc** (or Revert) restores the
+  exact sound you had before, including the loaded model and IR; **Enter** (or Keep) accepts it. Starting a
+  second audition does not lose the original sound — Revert always goes back to where you started.
 - **Right-click a slot** for Save here, Save As…, Rename… and Delete.
-- **Save** writes the current knob state, NAM and IR to the selected slot. A gold dot marks unsaved changes.
-- **A/B** compares the current slot with the matching slot in the other bank.
+- **Save** writes the current knob state, NAM and IR to the selected slot and ends the audition. A gold dot
+  marks unsaved changes.
 - **Library** opens the preset library, where presets can be recalled, renamed, deleted, exported and imported as JSON.
 
 Dropped `.nam` and `.wav` files are copied into a local asset library under the app's data directory,

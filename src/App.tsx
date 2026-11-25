@@ -149,6 +149,25 @@ function App() {
   useDialogFocus(showVisualization, closeVisualization, visualizationPopupRef);
   useDialogFocus(!!pendingNam, handleCancelLoadNam, confirmDialogRef);
 
+  // Audition controls: Enter keeps the previewed sound, Escape reverts it.
+  // Dialogs and menus keep their own Escape handling while they are open.
+  const { preview: presetPreview, commitPreview, revertPreview } = presetManager;
+  useEffect(() => {
+    if (!presetPreview) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"], [role="menu"]')) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        void revertPreview();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        commitPreview();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [presetPreview, commitPreview, revertPreview]);
+
   // Native drag-and-drop: browsers' onDrop does not fire for OS file drops in
   // the Tauri webview, so listen to the webview event which carries file paths.
   useEffect(() => {
@@ -266,6 +285,16 @@ function App() {
       </div>
       <AudioStatusBar status={audioStatus} />
       <Toast />
+      {presetManager.preview && (
+        <div className="preview-banner" role="status">
+          <span>
+            Previewing <strong>{presetManager.preview.activeName ?? 'bypass'}</strong>
+            <span className="preview-banner-hint"> · Enter to keep · Esc to revert</span>
+          </span>
+          <button type="button" onClick={presetManager.commitPreview}>Keep</button>
+          <button type="button" onClick={() => void presetManager.revertPreview()}>Revert</button>
+        </div>
+      )}
       <SettingsPanel
         open={showSettings}
         onClose={closeSettings}

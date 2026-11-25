@@ -24,6 +24,50 @@
   overflow: hidden;
 }
 
+/* Audition banner: visible while a preset is previewed but not yet kept. */
+.preview-banner {
+  position: fixed;
+  top: 0.4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 430;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 5px 8px 5px 12px;
+  background: rgba(15, 14, 11, 0.96);
+  border: 1px solid rgba(212, 175, 55, 0.55);
+  border-radius: 999px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+  color: var(--text);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.preview-banner strong {
+  color: var(--gold-bright);
+}
+
+.preview-banner-hint {
+  color: var(--text-muted);
+}
+
+.preview-banner button {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(212, 175, 55, 0.35);
+  background: rgba(212, 175, 55, 0.1);
+  color: var(--gold);
+  font-family: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.preview-banner button:hover {
+  color: var(--gold-bright);
+  background: var(--gold-soft);
+}
+
 /* Window tool buttons positioned at the top-right corner, below the native title bar */
 .window-tools {
   position: fixed;

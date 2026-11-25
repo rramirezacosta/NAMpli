@@ -9,7 +9,13 @@ does not carry the NAM/IR files), stale documentation, and no automated coverage
 frontend. This plan proposes concrete, prioritized follow-up work.
 
 This document **supplements** `preset-manager.md`; it does not replace it. The original design
-needs a small accuracy pass anyway (it says six knobs; there are now seven — reverb was added).
+needs a small accuracy pass anyway (it says six knobs and two banks; the app now has seven knobs
+and four banks A–D).
+
+**Implemented separately (Tier 1 ideas):** audition/revert ("spill") and a temporary snapshot
+strip. The strip was removed at the user's request; audition stays. It restores NAM/IR in the
+engine via the new `load_rig_assets` command. The old A/B compare was also removed, which makes
+the P0.4 race item below obsolete. The bank grid is now 4×4 (A1–D4, 16 slots).
 
 ## Current state (verified)
 
@@ -31,7 +37,7 @@ needs a small accuracy pass anyway (it says six knobs; there are now seven — r
 4. Bring documentation and tests in line with the implementation.
 
 **Non-goals**
-- Changing the DSP, the 2×4 bank/slot model, audio-device settings, or the fixed 1200×650 window.
+- Changing the DSP, the bank/slot model (now 4×4), audio-device settings, or the fixed 1200×650 window.
 - Cloud sync, factory preset packs, MIDI footswitch control, or a new UI theme.
 - Storing visualization/power/global audio settings in presets (explicitly out of scope before).
 
@@ -70,28 +76,23 @@ needs a small accuracy pass anyway (it says six knobs; there are now seven — r
 
 ### P0.3 Remove unreachable overflow slots
 
-- **Problem**: `sync_index` assigns `slot = 100 + count` beyond eight presets (`commands.rs:575–578`),
-  but `write_preset` rejects slots outside 1–4 (`:636–638`) and `PresetBar` only renders slots 1–4
-  (`SLOTS`). Those presets are visible only in the Library and cannot be recalled or overwritten.
-- **Change**: keep the 2×4 grid as the single source of truth. Stop assigning overflow slots; make
+- **Problem**: `sync_index` assigns `slot = 100 + count` beyond sixteen presets (now four banks × four
+  slots), but `write_preset` rejects slots outside 1–4 and `PresetBar` only renders slots 1–4. Those
+  presets are visible only in the Library and cannot be recalled or overwritten.
+- **Change**: keep the 4×4 grid as the single source of truth. Stop assigning overflow slots; make
   index reconciliation skip/orphan-report extra files explicitly (e.g. surface them in the Library
   as "unassigned" with a "move to free slot" action) rather than fabricating slot numbers that the
   rest of the app cannot address. Decide the desired cap behaviour in P0.2 (first-free-slot / full
   error) and apply it consistently.
-- **Acceptance**: every preset in `index.json` has a bank A/B and slot 1–4; no UI action can create
+- **Acceptance**: every preset in `index.json` has a bank A–D and slot 1–4; no UI action can create
   an unrecallable preset.
 
-### P0.4 Make A/B compare race-free
+### P0.4 ~~Make A/B compare race-free~~ — resolved by removing compare
 
-- **Problem**: `selectAt` fires `clearModelAndIr()` without awaiting (`usePresetManager.ts:123`)
-  while `compare()` swaps snapshots (`:220–243`); the `compareBackup.current === null` check at
-  `:242` is effectively dead code. A second compare or a slot click mid-compare can leave the
-  backup stranded.
-- **Change**: await the clear/recall inside compare; guard all mutating actions (`recallAt`,
-  `selectAt`, `save`, `remove`, `importJson`, `compare`) with one busy/lock flag so only one operates
-  at a time. Clear the backup on any user action that leaves compare mode.
-- **Acceptance**: A→B→A restores the exact snapshot, bank, slot, name and dirty baseline; rapid
-  clicks do not strand `comparing=true`; compare never writes to disk.
+- A/B compare was replaced by per-preset snapshots plus audition/revert. There is no `compare()`
+  function or `comparing` flag left; `previewRef` is the single backup and the `busy` flag guards
+  recall/revert/snapshot actions. If a compare-like toggle is wanted again, it should be built on
+  the snapshot system rather than reinstating the old code.
 
 ## P1 — Portability (the biggest real-world gap)
 

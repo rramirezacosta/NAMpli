@@ -1,5 +1,9 @@
 # DSP-Style Preset Manager for NAMpli
 
+> Historical design document. The shipped implementation now has **seven knobs** (reverb was
+> added) and **four banks A–D** (16 slots), and A/B compare has been replaced by audition/revert.
+> See `improve-preset-management.md` for follow-up work.
+
 # Requirements
 
 ### Overview

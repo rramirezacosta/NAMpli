@@ -8,11 +8,12 @@ import {
   importPreset,
   listPresets,
   loadPreset,
+  loadRigAssets,
   renamePreset,
   savePreset,
 } from '../tauri';
 
-interface CompareBackup {
+interface PreviewBackup {
   snapshot: RigSnapshot;
   bank: Bank;
   slot: number;
@@ -55,8 +56,10 @@ export function usePresetManager(
   const [activeName, setActiveName] = useState<string | null>(null);
   const [baseline, setBaseline] = useState<RigSnapshot>(DEFAULT_RIG);
   const [busy, setBusy] = useState(false);
-  const [comparing, setComparing] = useState(false);
-  const compareBackup = useRef<CompareBackup | null>(null);
+  const [preview, setPreview] = useState<PreviewBackup | null>(null);
+
+  /** Ref mirror so an in-flight recall cannot overwrite the original backup. */
+  const previewRef = useRef<PreviewBackup | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -81,6 +84,19 @@ export function usePresetManager(
     [metas],
   );
 
+  /** Remember the sound we are leaving so an audition can always be undone. */
+  const beginPreview = useCallback(() => {
+    if (previewRef.current) return;
+    const backup = { snapshot, bank, slot, activeName, baseline };
+    previewRef.current = backup;
+    setPreview(backup);
+  }, [snapshot, bank, slot, activeName, baseline]);
+
+  /**
+   * Audition: load the preset immediately. Escape reverts, Enter keeps it.
+   * A second audition does not replace the backup, so revert always returns
+   * to the sound the user started from.
+   */
   const recallAt = useCallback(
     async (targetBank: Bank, targetSlot: number) => {
       const meta = metaAt(targetBank, targetSlot);
@@ -88,6 +104,7 @@ export function usePresetManager(
         notifyError(`Slot ${targetBank}${targetSlot} is empty`);
         return;
       }
+      beginPreview();
       setBusy(true);
       try {
         const preset = await loadPreset(meta.name);
@@ -104,26 +121,57 @@ export function usePresetManager(
         setBusy(false);
       }
     },
-    [metaAt, applySnapshot],
+    [metaAt, applySnapshot, beginPreview],
   );
 
   const recall = useCallback(() => recallAt(bank, slot), [recallAt, bank, slot]);
 
   /**
    * Select an empty slot: it holds no NAM or IR, so load bypass (keep the knob
-   * positions) and make it the Save target. Clearing the active name makes Save
-   * default to a name for this slot instead of reusing one stored elsewhere.
+   * positions) and make it the Save target. Also auditionable/revertible.
    */
   const selectAt = useCallback(
     (targetBank: Bank, targetSlot: number) => {
+      beginPreview();
       setBank(targetBank);
       setSlot(targetSlot);
       setActiveName(null);
       setBaseline({ ...snapshot, model: null, ir: null });
       void clearModelAndIr();
     },
-    [snapshot, clearModelAndIr],
+    [snapshot, clearModelAndIr, beginPreview],
   );
+
+  /** Keep the auditioned sound as the current working state. */
+  const commitPreview = useCallback(() => {
+    if (!previewRef.current) return;
+    previewRef.current = null;
+    setPreview(null);
+    notifySuccess('Preview kept');
+  }, []);
+
+  /** Revert an audition, including the NAM/IR loaded into the audio engine. */
+  const revertPreview = useCallback(async () => {
+    const backup = previewRef.current;
+    if (!backup) return;
+    setBusy(true);
+    try {
+      await loadRigAssets(backup.snapshot);
+      applySnapshot(backup.snapshot);
+      setBank(backup.bank);
+      setSlot(backup.slot);
+      setActiveName(backup.activeName);
+      setBaseline(backup.baseline);
+      previewRef.current = null;
+      setPreview(null);
+      notifySuccess('Reverted to previous sound');
+    } catch (err) {
+      console.error('Failed to revert preview:', err);
+      notifyError(`Could not revert: ${err}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [applySnapshot]);
 
   const save = useCallback(
     async (name?: string, targetBank: Bank = bank, targetSlot: number = slot) => {
@@ -160,6 +208,9 @@ export function usePresetManager(
         setSlot(targetSlot);
         setActiveName(finalName);
         setBaseline(snapshot);
+        // Saving means the sound is no longer a preview.
+        previewRef.current = null;
+        setPreview(null);
         notifySuccess(`Saved ${finalName}`);
       } catch (err) {
         console.error('Failed to save preset:', err);
@@ -184,6 +235,11 @@ export function usePresetManager(
         await renamePreset(sourceName, clean);
         await refresh();
         if (activeName === sourceName) setActiveName(clean);
+        if (previewRef.current?.activeName === sourceName) {
+          const updated = { ...previewRef.current, activeName: clean };
+          previewRef.current = updated;
+          setPreview(updated);
+        }
         notifySuccess(`Renamed to ${clean}`);
       } catch (err) {
         console.error('Failed to rename preset:', err);
@@ -202,6 +258,10 @@ export function usePresetManager(
       try {
         await deletePreset(name);
         await refresh();
+        if (previewRef.current?.activeName === name) {
+          previewRef.current = null;
+          setPreview(null);
+        }
         if (activeName === name) {
           setActiveName(null);
           setBaseline(DEFAULT_RIG);
@@ -216,31 +276,6 @@ export function usePresetManager(
     },
     [activeName, refresh],
   );
-
-  /** A/B compare: swap to the other bank's matching slot, then restore. */
-  const compare = useCallback(async () => {
-    if (comparing) {
-      const backup = compareBackup.current;
-      if (backup) {
-        applySnapshot(backup.snapshot);
-        setBank(backup.bank);
-        setSlot(backup.slot);
-        setActiveName(backup.activeName);
-        setBaseline(backup.baseline);
-      }
-      compareBackup.current = null;
-      setComparing(false);
-      return;
-    }
-
-    const otherBank: Bank = bank === 'A' ? 'B' : 'A';
-    compareBackup.current = { snapshot, bank, slot, activeName, baseline };
-    setComparing(true);
-    // An empty slot holds no NAM/IR, so comparing against it means bypass.
-    if (metaAt(otherBank, slot)) await recallAt(otherBank, slot);
-    else selectAt(otherBank, slot);
-    if (compareBackup.current === null) setComparing(false);
-  }, [comparing, bank, slot, metaAt, snapshot, activeName, baseline, applySnapshot, recallAt, selectAt]);
 
   const exportJson = useCallback(async () => {
     if (!activeName) {
@@ -276,7 +311,9 @@ export function usePresetManager(
     activeName,
     dirty,
     busy,
-    comparing,
+    preview,
+    commitPreview,
+    revertPreview,
     setBank,
     setSlot,
     metaAt,
@@ -286,7 +323,6 @@ export function usePresetManager(
     save,
     rename,
     remove,
-    compare,
     exportJson,
     importJson,
     refresh,

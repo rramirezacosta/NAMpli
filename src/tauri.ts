@@ -3,6 +3,7 @@ import type {
   AssetRef,
   PresetMeta,
   PresetPayload,
+  RigSnapshot,
 } from './types/preset';
 
 export interface AudioDeviceInfo {
@@ -173,6 +174,11 @@ export async function savePreset(preset: PresetPayload): Promise<void> {
 /** Loads the NAM/IR in the backend and returns the payload for UI sync. */
 export async function loadPreset(name: string): Promise<PresetPayload> {
   return invoke('load_preset', { name });
+}
+
+/** Restore an arbitrary rig's NAM/IR from the local asset library (audition revert). */
+export async function loadRigAssets(rig: RigSnapshot): Promise<void> {
+  return invoke('load_rig_assets', { rig });
 }
 
 export async function deletePreset(name: string): Promise<void> {
