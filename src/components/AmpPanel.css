@@ -1,17 +1,9 @@
 .amp-panel {
-  position: relative;
   display: flex;
   flex-direction: column;
   width: min(var(--panel-max), calc(100vw - 120px));
   padding: 0 1.5rem 1rem;
-  background: linear-gradient(180deg, #1c1c1c 0%, var(--bg-panel) 55%, #0e0e0e 100%);
-  border: 1px solid var(--gold-line);
-  border-radius: 8px;
-  box-shadow:
-    0 4px 28px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition: box-shadow 0.3s ease;
-  overflow: hidden;
 }
 
 /* Textured panel background resembling a real amp faceplate */
@@ -69,7 +61,7 @@
 
 .panel-header {
   text-align: center;
-  padding: 0.85rem 0 0.7rem;
+  padding: 1.1rem 0 0.9rem;
   border-bottom: 1px solid rgba(212, 175, 55, 0.16);
   position: relative;
   z-index: 1;
@@ -129,7 +121,7 @@
   letter-spacing: 0.12em;
 }
 
-.state-pill.live {
+.state-pill.active {
   color: var(--ok);
   border-color: rgba(111, 221, 139, 0.5);
   background: rgba(111, 221, 139, 0.1);
@@ -141,22 +133,41 @@
   background: var(--gold-soft);
 }
 
+.state-pill.bypass {
+  color: #e8b865;
+  border-color: rgba(232, 184, 101, 0.45);
+  background: rgba(232, 184, 101, 0.1);
+}
+
+.state-pill.preview {
+  color: #d8b6ff;
+  border-color: rgba(200, 150, 255, 0.5);
+  background: rgba(160, 100, 255, 0.12);
+}
+
 .knob-row {
   display: flex;
   justify-content: center;
+  align-items: center;
   flex-wrap: nowrap;
-  gap: 1.25rem;
-  padding: 1rem 0;
+  /* Tighter spacing leaves room for the IN/OUT meters at the lateral edges. */
+  gap: 0.9rem;
+  padding: 1.6rem 0;
   position: relative;
   z-index: 1;
+}
+
+/* Meters flank the three knob groups and share their vertical centre. */
+.knob-row > .level-meter {
+  flex: 0 0 auto;
 }
 
 .knob-group {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.55rem;
-  padding: 0.6rem 1rem 0.7rem;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem 0.9rem;
   border: 1px solid rgba(212, 175, 55, 0.14);
   border-radius: var(--radius);
   background: rgba(0, 0, 0, 0.22);
@@ -172,7 +183,7 @@
 
 .knob-group-controls {
   display: flex;
-  gap: 1rem;
+  gap: 0.85rem;
 }
 
 .panel-footer {
@@ -212,4 +223,20 @@
 .footer-hint {
   color: var(--text-dim);
   font-size: 0.62rem;
+}
+
+/* Browser dev mode can resize the window; avoid clipping the nowrap knob row. */
+@media (max-width: 1100px) {
+  .amp-panel {
+    width: calc(100vw - 48px);
+  }
+
+  .knob-row {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .knob-group-controls {
+    gap: 0.5rem;
+  }
 }

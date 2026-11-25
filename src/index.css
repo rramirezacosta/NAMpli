@@ -28,6 +28,39 @@
   --ok: #6fdd8b;
   --danger: #d98a7a;
 
+  /* Surfaces shared by every overlay and dialog */
+  --overlay-bg: rgba(0, 0, 0, 0.72);
+  --card-bg: rgba(16, 16, 16, 0.98);
+  --card-border: rgba(212, 175, 55, 0.35);
+  --shadow-card: 0 12px 32px rgba(0, 0, 0, 0.8);
+
+  /* Type scale */
+  --fs-xs: 0.68rem;
+  --fs-sm: 0.78rem;
+  --fs-md: 0.9rem;
+  --fs-lg: 1.1rem;
+  --fs-xl: 1.9rem;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+
+  /* The status bar persists across views; footers reserve space for it.
+     The top-right tool cluster is only mounted on the amp faceplate. */
+  --chrome-reserve-bottom: 1.9rem;
+
+  /* One stacking scale. Portaled preset overlays live inside .app so these
+     numbers actually order them against the other dialogs. */
+  --z-content: 1;
+  --z-local: 10;
+  --z-tools: 20;
+  --z-banner: 30;
+  --z-settings: 40;
+  --z-modal: 50;
+  --z-toast: 60;
+
   /* Geometry */
   --radius: 6px;
   --panel-max: 1040px;

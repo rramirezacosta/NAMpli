@@ -156,9 +156,9 @@ export default function SettingsPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
+    <div className="settings-overlay overlay" onClick={onClose}>
       <div
-        className="settings-panel"
+        className="settings-panel card"
         ref={panelRef}
         role="dialog"
         aria-modal="true"
@@ -168,7 +168,7 @@ export default function SettingsPanel({
       >
         <div className="settings-header">
           <h2 id="settings-title">Settings</h2>
-          <button className="settings-close" onClick={onClose} aria-label="Close settings">
+          <button className="settings-close close-btn" onClick={onClose} aria-label="Close settings">
             &times;
           </button>
         </div>

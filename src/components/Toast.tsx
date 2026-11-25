@@ -36,7 +36,7 @@ export default function Toast() {
           </span>
           <span className="toast-message">{notice.message}</span>
           <button
-            className="toast-close"
+            className="toast-close close-btn"
             onClick={() => setNotices((prev) => prev.filter((n) => n.id !== notice.id))}
             aria-label="Dismiss"
           >

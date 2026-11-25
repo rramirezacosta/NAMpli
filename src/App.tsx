@@ -18,6 +18,7 @@ import AssetLibrary from './components/AssetLibrary';
 import type { AssetMeta, Bank } from './types/preset';
 import { importAsset, importPreset, importPresetFromPath, logToTerminal } from './tauri';
 import { notifyError, notifySuccess } from './notifications';
+import { fileNameFromPath, isTauri } from './utils/platform';
 import './App.css';
 
 /** Pending NAM file waiting for user confirmation */
@@ -25,9 +26,6 @@ interface PendingNam {
   filename: string;
   path: string;
 }
-
-/** True when running inside the Tauri webview (native drag-drop events available). */
-const isTauri = () => '__TAURI_INTERNALS__' in window;
 
 /** Log to both the browser console and the backend OS terminal. */
 function log(...args: unknown[]) {
@@ -103,9 +101,6 @@ function App() {
     void assetLibrary.previewAsset(asset);
   }, [presetManager, assetLibrary]);
 
-  /** Extract the file name from a path reported by Tauri's native drop event. */
-  const fileNameFromPath = (path: string) =>
-    path.split(/[\\/]/).pop() ?? path;
   /** Starting a preset audition commits any pending asset preview first. */
   const presetManagerForAmp = useMemo(() => ({
     ...presetManager,
@@ -365,10 +360,6 @@ function App() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      <div className="window-tools">
-        <SettingsIcon onClick={() => setShowSettings(true)} />
-        <TunerIcon onClick={openTuner} />
-      </div>
       {/* Full-window views own the whole faceplate; the floating tools would sit
           on top of their headers, so only show them on the amp view. */}
       {view === 'amp' && (
@@ -409,9 +400,9 @@ function App() {
       )}
       {/* Confirmation dialog for NAM file loading */}
       {pendingNam && (
-        <div className="confirm-dialog-overlay" onClick={handleCancelLoadNam}>
+        <div className="confirm-dialog-overlay overlay" onClick={handleCancelLoadNam}>
           <div
-            className="confirm-dialog"
+            className="confirm-dialog card"
             ref={confirmDialogRef}
             role="dialog"
             aria-modal="true"
@@ -425,16 +416,17 @@ function App() {
             </p>
             <p className="confirm-dialog-filename">{pendingNam.filename}</p>
             <div className="confirm-dialog-buttons">
-              <button className="confirm-dialog-btn cancel" onClick={handleCancelLoadNam}>
+              <button className="confirm-dialog-btn btn cancel" onClick={handleCancelLoadNam}>
                 Cancel
               </button>
-              <button className="confirm-dialog-btn load" onClick={handleConfirmLoadNam}>
+              <button className="confirm-dialog-btn btn btn-primary load" onClick={handleConfirmLoadNam}>
                 Load
               </button>
             </div>
           </div>
         </div>
       )}
+      <div className={`app-content ${view === 'amp' ? '' : 'app-content-full-view'}`}>
         {view === 'tuner' ? (
           <Tuner powered={settings.powerOn} onBack={() => backToAmp('tuner')} />
         ) : view === 'library' ? (

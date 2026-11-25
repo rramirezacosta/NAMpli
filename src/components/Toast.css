@@ -7,7 +7,7 @@
   flex-direction: column;
   gap: 8px;
   width: min(560px, 90vw);
-  z-index: 500;
+  z-index: var(--z-toast);
   pointer-events: none;
 }
 
@@ -63,20 +63,7 @@
   word-break: break-word;
 }
 
-.toast-close {
-  flex: 0 0 auto;
-  background: transparent;
-  border: none;
-  color: #c09088;
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 2px;
-}
-
-.toast-close:hover {
-  color: #fff;
-}
+/* .close-btn from App.css supplies the shared chrome. */
 
 @keyframes toast-in {
   from {

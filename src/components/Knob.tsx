@@ -178,10 +178,11 @@ export default function Knob({
           onKeyDown={handleKeyDown}
           role="slider"
           aria-label={label}
+          aria-orientation="vertical"
           aria-valuemin={MIN_VALUE}
           aria-valuemax={MAX_VALUE}
           aria-valuenow={value}
-          aria-valuetext={`${label} ${value}`}
+          aria-valuetext={`${label} ${value} of 10`}
           tabIndex={disabled ? -1 : 0}
         >
           <div

@@ -5,7 +5,7 @@ interface AudioStatusBarProps {
   status: AudioStatus | null;
 }
 
-/** Small always-visible line with sample rate, latency, xruns and cab IR. */
+/** Small always-visible line with sample rate, latency, xruns, NAM and cab IR. */
 export default function AudioStatusBar({ status }: AudioStatusBarProps) {
   if (!status) return null;
 
@@ -21,7 +21,12 @@ export default function AudioStatusBar({ status }: AudioStatusBarProps) {
           ? `${(status.sampleRate / 1000).toFixed(1)} kHz · ${latencyMs.toFixed(1)} ms · ${xrunLabel}`
           : 'Standby'}
       </span>
-      <span className="audio-status-ir" title={status.irName ?? 'No cabinet IR loaded'}>
+      {status.namModel && (
+        <span className="audio-status-asset" title={`NAM: ${status.namModel}`}>
+          NAM: {status.namModel}
+        </span>
+      )}
+      <span className="audio-status-asset" title={status.irName ?? 'No cabinet IR loaded'}>
         {status.irName ? `Cab: ${status.irName}` : 'No cab IR'}
       </span>
     </div>

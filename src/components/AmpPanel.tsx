@@ -39,11 +39,11 @@ export default function AmpPanel({
   outputVolume,
   reverb,
   powerOn,
+  previewing,
   modelName,
   irName,
   meters,
   presetManager,
-  onOpenLibrary,
   onTogglePower,
   onSetInputVolume,
   onSetGate,
@@ -55,11 +55,19 @@ export default function AmpPanel({
 }: AmpPanelProps) {
   const modelLabel = modelName?.replace(/\.nam$/i, '') ?? 'none';
   const irLabel = irName?.replace(/\.wav$/i, '') ?? 'none';
-  const state = !powerOn ? 'standby' : modelName ? 'live' : 'bypass';
+  // One vocabulary across the app: standby = power off, bypass = powered with
+  // no model, active = model loaded. "Live" is reserved for power indicators.
+  const state = !powerOn ? 'standby' : modelName ? 'active' : 'bypass';
   const stateLabel = state.toUpperCase();
+  const stateTitle =
+    state === 'active'
+      ? 'Power on, model loaded'
+      : state === 'bypass'
+        ? 'Power on, no model (bypass)'
+        : 'Power off';
 
   return (
-    <div className={`amp-panel ${powerOn ? 'power-on' : 'power-off'}`}>
+    <div className={`amp-panel view-shell ${powerOn ? 'power-on' : 'power-off'}`}>
       {/* Presets are the primary interaction surface, so they lead the panel. */}
       <div className="preset-rail">
         <PresetBar manager={presetManager} />
@@ -69,7 +77,7 @@ export default function AmpPanel({
         <div className="panel-title-group">
           <h1 className="panel-title">NAMpli</h1>
           <div className="panel-readout">
-            <span className={`state-pill ${state}`} title={stateLabel}>
+            <span className={`state-pill ${state}`} title={stateTitle}>
               {stateLabel}
             </span>
             {previewing && (
@@ -167,7 +175,7 @@ export default function AmpPanel({
           <span className={`footer-chip ${irName ? 'on' : ''}`}>
             {irName ? 'CAB ON' : 'NO CAB'}
           </span>
-          <span className="footer-hint">Drop a .nam or .wav file to load</span>
+          <span className="footer-hint">Drop .nam / .wav / .json to load · Library for stored files</span>
         </div>
       </div>
     </div>

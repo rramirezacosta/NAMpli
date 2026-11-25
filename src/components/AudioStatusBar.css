@@ -8,7 +8,7 @@
   max-width: calc(100vw - 24px);
   font-size: 0.7rem;
   color: var(--text-muted);
-  z-index: 150;
+  z-index: var(--z-local);
   pointer-events: none;
   font-variant-numeric: tabular-nums;
 }
@@ -31,8 +31,8 @@
   white-space: nowrap;
 }
 
-.audio-status-ir {
-  max-width: 280px;
+.audio-status-asset {
+  max-width: 190px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

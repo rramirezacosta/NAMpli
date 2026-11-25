@@ -13,7 +13,7 @@
 /* Center the amp panel in the space below the chrome; never scroll. */
 .app-content {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-content);
   display: flex;
   flex: 1;
   align-items: center;
@@ -23,13 +23,136 @@
   overflow: hidden;
 }
 
+/* --- Shared view / dialog primitives -------------------------------------- */
+
+/* Background, border and shadow shared by the faceplate, Library and Tuner. */
+.view-shell {
+  position: relative;
+  background: linear-gradient(180deg, #1c1c1c 0%, var(--bg-panel) 55%, #0e0e0e 100%);
+  border: 1px solid var(--gold-line);
+  border-radius: 8px;
+  box-shadow: 0 4px 28px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(var(--overlay-blur, 3px));
+  z-index: var(--overlay-z, var(--z-modal));
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 6px 16px;
+  border: 1px solid rgba(200, 200, 200, 0.25);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(200, 200, 200, 0.5);
+  color: var(--text);
+}
+
+.btn-primary {
+  background: var(--gold-soft);
+  border-color: rgba(212, 175, 55, 0.5);
+  color: var(--gold-bright);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: rgba(212, 175, 55, 0.28);
+  border-color: rgba(212, 175, 55, 0.75);
+  color: var(--gold-bright);
+}
+
+.close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.close-btn:hover {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+.back-btn {
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--gold-line);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.back-btn:hover {
+  color: var(--gold-bright);
+  border-color: rgba(212, 175, 55, 0.55);
+  background: var(--gold-soft);
+}
+
+.section-title {
+  color: var(--gold);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+/* Full-window views (Library, Tuner) must leave room for the fixed status bar
+   at the bottom of the window, or it paints over their footer. */
+.app-content-full-view {
+  padding-bottom: 32px;
+}
+
 /* Audition banner: visible while a preset is previewed but not yet kept. */
 .preview-banner {
   position: fixed;
   top: 0.4rem;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 430;
+  z-index: var(--z-banner);
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -75,15 +198,15 @@
   display: flex;
   align-items: center;
   gap: 2px;
-  z-index: 400;
+  z-index: var(--z-tools);
 }
 
 .window-tools .tool-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 26px;
+  width: 32px;
+  height: 30px;
   padding: 0;
   background: transparent;
   border: 1px solid transparent;
@@ -123,7 +246,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 500;
+  z-index: var(--z-toast);
   pointer-events: none;
 }
 
@@ -150,22 +273,12 @@
 
 /* Confirmation dialog for NAM file loading */
 .confirm-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.75);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 600;
+  /* .overlay supplies the backdrop and z-index; this keeps the class contract. */
   backdrop-filter: blur(3px);
 }
 
 .confirm-dialog {
-  background: rgba(16, 16, 16, 0.97);
-  border: 1px solid rgba(212, 175, 55, 0.35);
-  border-radius: 10px;
   padding: 2rem 2.5rem;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -209,36 +322,10 @@
 }
 
 .confirm-dialog-btn {
-  min-height: 34px;
+  min-height: 36px;
   padding: 8px 24px;
-  border-radius: 6px;
-  font: inherit;
-  font-size: 0.9rem;
+  font-size: var(--fs-md);
   font-weight: 500;
-  cursor: pointer;
-  border: 1px solid transparent;
-  transition: background 0.15s, border-color 0.15s;
 }
 
-.confirm-dialog-btn.cancel {
-  background: transparent;
-  border-color: rgba(200, 200, 200, 0.3);
-  color: var(--text-muted);
-}
-
-.confirm-dialog-btn.cancel:hover {
-  background: rgba(200, 200, 200, 0.1);
-  border-color: rgba(200, 200, 200, 0.5);
-  color: var(--text);
-}
-
-.confirm-dialog-btn.load {
-  background: var(--gold-soft);
-  border-color: rgba(212, 175, 55, 0.4);
-  color: var(--gold);
-}
-
-.confirm-dialog-btn.load:hover {
-  background: rgba(212, 175, 55, 0.3);
-  border-color: rgba(212, 175, 55, 0.7);
-}
+/* Cancel uses .btn and Load uses .btn btn-primary (see App.tsx). */
