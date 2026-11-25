@@ -35,6 +35,18 @@ mix). It starts off, changes take effect immediately while playing, and its valu
 preset. Older presets without a reverb value recall with the effect off. Room size and damping are
 fixed; no external IR file is needed.
 
+## Level meters
+
+The faceplate shows two vertical dB meters flanking the knob groups (IN on the left, OUT on the right):
+
+- **IN** reads the raw guitar input before the Input trim, noise gate and amp model — useful for setting
+  your interface/pickup level without downstream knobs hiding a clipped input.
+- **OUT** reads the final, limited signal sent to the output device.
+
+Both use a log-style 0…-60 dBFS scale with -20 dB at the midpoint (the 0…-20 dB decade occupies the
+upper half of the meter), plus a decaying peak-hold marker, a numeric RMS/peak readout and a brief clip
+indicator. They are read-only, idle while powered off, and do not affect the audio path or latency.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.

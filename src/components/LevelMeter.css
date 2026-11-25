@@ -1,0 +1,126 @@
+.level-meter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.level-meter-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.level-meter.active .level-meter-label {
+  color: var(--gold);
+}
+
+.level-meter-body {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  height: 138px;
+}
+
+/* Fixed dB scale to the left of the LED column. */
+.level-meter-scale {
+  position: relative;
+  width: 24px;
+  height: 100%;
+}
+
+.level-meter-tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 0;
+}
+
+.level-meter-tick-mark {
+  width: 5px;
+  height: 1px;
+  background: rgba(212, 175, 55, 0.4);
+}
+
+.level-meter-tick-label {
+  font-size: 0.58rem;
+  line-height: 1;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.level-meter-track {
+  position: relative;
+  width: 13px;
+  height: 100%;
+  background: #080808;
+  border: 1px solid rgba(212, 175, 55, 0.24);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+/* LED-style horizontal segments, fixed to the scale (not to the fill). */
+.level-meter-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to top,
+    transparent 0,
+    transparent 3px,
+    rgba(0, 0, 0, 0.6) 3px,
+    rgba(0, 0, 0, 0.6) 4px
+  );
+  pointer-events: none;
+}
+
+.level-meter-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top,
+    var(--ok) 0%,
+    var(--ok) 62%,
+    var(--gold) 84%,
+    #d9603f 100%
+  );
+  clip-path: inset(100% 0 0 0);
+  transition: clip-path 0.08s linear;
+}
+
+.level-meter-hold {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gold-bright);
+  box-shadow: 0 0 4px rgba(240, 208, 96, 0.7);
+  transition: bottom 0.12s linear;
+}
+
+.level-meter:not(.active) .level-meter-hold {
+  opacity: 0;
+}
+
+.level-meter-clip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2a201d;
+  border: 1px solid rgba(217, 138, 122, 0.35);
+}
+
+.level-meter.clipped .level-meter-clip {
+  background: var(--danger);
+  box-shadow: 0 0 7px rgba(217, 138, 122, 0.85);
+}
+

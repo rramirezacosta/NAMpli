@@ -1,7 +1,9 @@
 import Knob from './Knob';
+import LevelMeter from './LevelMeter';
 import PresetBar from './PresetBar';
 import PowerSwitch from './PowerSwitch';
 import type { PresetManager } from '../hooks/usePresetManager';
+import type { MeterSnapshot } from '../tauri';
 import './AmpPanel.css';
 
 interface AmpPanelProps {
@@ -15,6 +17,7 @@ interface AmpPanelProps {
   powerOn: boolean;
   modelName: string | null;
   irName: string | null;
+  meters: MeterSnapshot | null;
   presetManager: PresetManager;
   onOpenLibrary: () => void;
   onTogglePower: () => void;
@@ -38,6 +41,7 @@ export default function AmpPanel({
   powerOn,
   modelName,
   irName,
+  meters,
   presetManager,
   onOpenLibrary,
   onTogglePower,
@@ -80,6 +84,8 @@ export default function AmpPanel({
       </div>
 
       <div className="knob-row">
+        <LevelMeter label="IN" reading={meters?.input ?? null} active={powerOn} />
+
         <section className="knob-group" aria-label="Input and gate">
           <h2 className="knob-group-title">Input / Gate</h2>
           <div className="knob-group-controls">
@@ -146,6 +152,8 @@ export default function AmpPanel({
             />
           </div>
         </section>
+
+        <LevelMeter label="OUT" reading={meters?.output ?? null} active={powerOn} />
       </div>
 
       <div className="panel-footer">

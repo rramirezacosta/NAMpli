@@ -112,6 +112,26 @@ export async function getTuner(): Promise<TunerStatus> {
   return invoke('get_tuner');
 }
 
+export interface MeterReading {
+  /** Rolling RMS over ~100 ms, dBFS. */
+  levelDb: number;
+  /** Rolling peak over ~100 ms, dBFS. */
+  peakDb: number;
+  /** Decaying peak-hold marker, dBFS. */
+  peakHoldDb: number;
+  /** Latched briefly after a clipped sample. */
+  clipped: boolean;
+}
+
+export interface MeterSnapshot {
+  input: MeterReading;
+  output: MeterReading;
+}
+
+export async function getMeters(): Promise<MeterSnapshot> {
+  return invoke('get_meters');
+}
+
 export async function togglePower(): Promise<boolean> {
   return invoke('toggle_power');
 }

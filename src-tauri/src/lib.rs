@@ -3,6 +3,7 @@ mod audio_engine;
 mod commands;
 mod eq;
 mod ir;
+mod level_meter;
 mod reverb;
 mod tuner;
 
@@ -54,6 +55,7 @@ pub fn run() {
             commands::set_reverb,
             commands::get_audio_status,
             commands::get_tuner,
+            commands::get_meters,
             commands::set_buffer_size,
             commands::list_presets,
             commands::save_preset,

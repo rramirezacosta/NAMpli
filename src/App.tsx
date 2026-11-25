@@ -3,6 +3,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { useRigState } from './hooks/useRigState';
 import { usePresetManager } from './hooks/usePresetManager';
 import { useAudioStatus } from './hooks/useAudioStatus';
+import { useMeters } from './hooks/useMeters';
 import { useDialogFocus } from './hooks/useDialogFocus';
 import AmpPanel from './components/AmpPanel';
 import SettingsIcon from './components/SettingsIcon';
@@ -76,6 +77,7 @@ function App() {
     setIr,
   } = rig;
   const audioStatus = useAudioStatus();
+  const meters = useMeters(view === 'amp' && settings.powerOn);
 
   /** Extract the file name from a path reported by Tauri's native drop event. */
   const fileNameFromPath = (path: string) =>
@@ -393,6 +395,7 @@ function App() {
             irName={rig.ir?.name ?? null}
             presetManager={presetManager}
             onOpenLibrary={openLibrary}
+            meters={meters}
             onTogglePower={togglePower}
             onSetInputVolume={setInputVolume}
             onSetGate={setGate}

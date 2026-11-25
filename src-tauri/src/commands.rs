@@ -1,4 +1,5 @@
 use crate::audio_engine::{AudioEngine, AudioStatus};
+use crate::level_meter::MeterSnapshot;
 use cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -320,6 +321,16 @@ pub fn get_tuner(
     let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
     let (hz, level_db) = engine.tuner();
     Ok(TunerStatus { hz, level_db })
+}
+
+/// Read-only input/output meter snapshot. The worker publishes it after the
+/// audio hand-off; the UI polls it at ~30 Hz.
+#[tauri::command]
+pub fn get_meters(
+    engine: State<'_, StdMutex<AudioEngine>>,
+) -> Result<MeterSnapshot, String> {
+    let engine = engine.lock().map_err(|e| format!("Mutex poisoned: {}", e))?;
+    Ok(engine.meters())
 }
 
 #[tauri::command]

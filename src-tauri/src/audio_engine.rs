@@ -1,5 +1,6 @@
 use crate::eq::EqChain;
 use crate::ir::CabinetIr;
+use crate::level_meter::{LevelMeter, MeterSnapshot};
 use crate::model_manager::ModelManager;
 use crate::reverb::Reverb;
 use crate::tuner::Tuner;
@@ -104,6 +105,9 @@ pub struct SharedState {
     /// Latest tuner result; `tuner_hz == 0.0` means "no pitch".
     pub tuner_hz: f32,
     pub tuner_level_db: f32,
+    /// Latest input/output meter snapshots. Read-only observation of the
+    /// signal, written once per block after the audio hand-off.
+    pub meters: MeterSnapshot,
 }
 
 impl SharedState {
@@ -131,6 +135,7 @@ impl SharedState {
             reverb: 0.0,
             tuner_hz: 0.0,
             tuner_level_db: -120.0,
+            meters: MeterSnapshot::idle(),
         }
     }
 }
@@ -340,6 +345,7 @@ impl AudioEngine {
             state.sample_rate = output_sample_rate;
             state.tuner_hz = 0.0;
             state.tuner_level_db = -120.0;
+            state.meters = MeterSnapshot::idle();
         }
         self.health.reset();
         {
@@ -424,6 +430,10 @@ impl AudioEngine {
                 let mut gate_env = 0.0_f32;
                 let mut gate_gain = 1.0_f32;
                 let mut tuner = Tuner::new(sample_rate);
+                // Meters are recreated for each stream run, so their rolling
+                // history is automatically cleared on a restart.
+                let mut input_level = LevelMeter::new(sample_rate);
+                let mut output_level = LevelMeter::new(sample_rate);
 
                 while !stop_flag.load(Ordering::Relaxed) {
                     if raw_consumer.occupied_len() == 0 {
@@ -487,9 +497,16 @@ impl AudioEngine {
                     let release_coeff =
                         (-1.0_f32 / (gate_decay_ms.max(10.0) * 0.001 * sample_rate)).exp();
 
+                    // Raw input meter accumulates here, before trim/gate, so
+                    // it reflects the level coming from the interface.
+                    let mut input_sum_sq = 0.0_f64;
+                    let mut input_peak = 0.0_f32;
                     for sample in &mut buffer[..got] {
+                        let raw = *sample;
+                        input_sum_sq += raw as f64 * raw as f64;
+                        input_peak = input_peak.max(raw.abs());
                         trim = smooth_coeff * trim + (1.0 - smooth_coeff) * trim_target;
-                        let mut x = *sample * trim;
+                        let mut x = raw * trim;
                         // Track the envelope even while the gate is disabled so
                         // enabling it mid-note does not duck for a few
                         // milliseconds while the envelope catches up.
@@ -568,6 +585,12 @@ impl AudioEngine {
                         gain = total_gain;
                     }
 
+                    // Output meter measures the final, limited samples that
+                    // are about to reach the device. During a rig change the
+                    // output is ramped to silence first, so swapping the NAM,
+                    // IR or going to/from bypass cannot click.
+                    let mut output_sum_sq = 0.0_f64;
+                    let mut output_peak = 0.0_f32;
                     for sample in &mut buffer[..got] {
                         let x = *sample;
                         dc_avg = alpha * dc_avg + (1.0 - alpha) * x;
@@ -575,9 +598,21 @@ impl AudioEngine {
                         // Soft-knee limiter: transparent under -1dBFS, rounds off
                         // peaks above it, and can never produce digital clipping.
                         *sample = soft_clip((x - dc_avg) * gain);
+                        output_sum_sq += *sample as f64 * *sample as f64;
+                        output_peak = output_peak.max((*sample).abs());
                     }
 
                     out_producer.push_slice(&buffer[..got]);
+
+                    // Meters are published only after the block has been handed
+                    // to the output ring, so this work can never delay audio.
+                    // try_lock drops a frame rather than blocking the worker if
+                    // the UI happens to be reading.
+                    let input = input_level.push(input_sum_sq, input_peak, got);
+                    let output = output_level.push(output_sum_sq, output_peak, got);
+                    if let Some(mut s) = state.try_lock() {
+                        s.meters = MeterSnapshot { input, output };
+                    }
                 }
             })
             .map_err(|e| format!("Failed to spawn DSP thread: {}", e))?;
@@ -682,6 +717,7 @@ impl AudioEngine {
         {
             let mut state = self.state.lock();
             state.powered = false;
+            state.meters = MeterSnapshot::idle();
         }
         log::info!("Audio engine stopped");
     }
@@ -806,6 +842,11 @@ impl AudioEngine {
     pub fn tuner(&self) -> (f32, f32) {
         let state = self.state.lock();
         (state.tuner_hz, state.tuner_level_db)
+    }
+
+    /// Latest input/output meter snapshot (a copy, so the UI never holds a lock).
+    pub fn meters(&self) -> MeterSnapshot {
+        self.state.lock().meters
     }
 
     /// Set the DSP pipeline latency. Takes effect immediately by restarting the
