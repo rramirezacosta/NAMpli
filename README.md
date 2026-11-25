@@ -1,81 +1,135 @@
 # NAMpli
 
-NAMpli is a Tauri desktop app for playing NAM guitar amp captures with a cabinet IR.
+A desktop amp for playing [Neural Amp Modeler](https://github.com/NeuralAmpModelerCore/NAM)
+(NAM) guitar and bass captures through a cabinet impulse response (IR). Runs locally, offline,
+with your audio interface — no plugin host or DAW needed.
 
-## Preset manager
+[![NAMpli faceplate with four preset banks, seven knobs and live IN/OUT meters](docs/screenshots/faceplate.png)](docs/screenshots/faceplate.png)
 
-The main panel has a DSP-style preset board with four banks (A/B/C/D) and four slots each:
+*The faceplate: a 4×4 preset board, the amp knobs, IN/OUT level meters and the live audio status bar.
+This shot has a NAM loaded and the amp powered on; no cabinet IR is loaded.*
 
-- **Click a slot** to audition its knobs, NAM model and IR immediately. Empty slots are selectable too —
-  clicking one auditions bypass (clears the NAM and IR, keeping the knob positions) and makes it the Save
-  target. Presets saved with no NAM/IR likewise recall as bypass.
-- **Audition** can be undone: a banner shows the preset being previewed. **Esc** (or Revert) restores the
-  exact sound you had before, including the loaded model and IR; **Enter** (or Keep) accepts it. Starting a
-  second audition does not lose the original sound — Revert always goes back to where you started.
-- **Right-click a slot** for Save here, Save As…, Rename… and Delete.
-- **Save** writes the current knob state, NAM and IR to the selected slot and ends the audition. A gold dot
-  marks unsaved changes: it compares the working sound with the recalled preset (or, for an empty slot, with
-  a blank preset). Tiny floating-point drift from the backend knobs does not trigger it.
-- **Library** switches to a full-window browser with search, bank filters, sorting and a details panel. The
-  currently loaded preset is marked **LOADED** and the one being auditioned is marked **PREVIEW**, so they are
-  distinct from the row you merely selected. From there you can audition, rename, move or copy presets between
-  slots, export, import and delete them. **Esc** or **← Back to amp** returns to the faceplate (Esc first reverts
-  an active audition). Dropping a preset `.json` into the library imports it.
+## What is NAMpli?
 
-Dropped `.nam` and `.wav` files are copied into a local asset library under the app's data directory,
-so presets keep their model and cabinet after a restart. The app still starts in bypass mode; recall a
-preset (or drop a file) to load a model. Models and cabinet IRs are loaded by dropping files or by
-recalling a preset; the options dialog only holds audio device and buffer size settings. Those settings
-are global and are not stored in presets.
+A **NAM model** (`.nam` file) is a captured amp's sound. A **cab IR** (`.wav` file) is the
+recorded response of a speaker cabinet — it turns the raw amp sound into something that feels like
+a mic'd cab. NAMpli loads both, adds an output EQ, a room reverb and a noise gate, and plays the
+result through your audio interface with low latency.
 
-## Reverb
+A few words you'll see throughout:
 
-The **Reverb** knob on the output section adds an algorithmic room reverb (0 = off, 10 = maximum wet
-mix). It starts off, changes take effect immediately while playing, and its value is saved with each
-preset. Older presets without a reverb value recall with the effect off. Room size and damping are
-fixed; no external IR file is needed.
+| Term | Meaning |
+| --- | --- |
+| **Bank / slot** | One of four banks (A–D) with four slots each: 16 places for presets. |
+| **Preset** | A stored rig: name, all seven knob positions, and a NAM model and/or cab IR. |
+| **Audition** | Try a preset or file temporarily. **Keep** accepts it; **Revert** puts your old sound back. |
+| **Bypass** | Amp powered on with no model or IR loaded. The app starts this way. |
 
-## Level meters
+## What you need
 
-The faceplate shows two vertical dB meters flanking the knob groups (IN on the left, OUT on the right):
+- An audio interface (or other input/output device) with your guitar or bass plugged in, plus
+  headphones or studio monitors.
+- At least one NAM capture (`.nam`). Community captures are available from the
+  [NAM project](https://github.com/NeuralAmpModelerCore/NAM) and capture libraries.
+  A cabinet IR (`.wav`) is optional but recommended for a realistic guitar tone.
+- NAMpli is currently built from source — see [Development](#development).
+- On Linux, NAMpli is built with JACK support; other available hosts (such as ALSA or PulseAudio)
+  can also be selected in Settings. You'll need JACK development headers installed (see
+  [Development](#development)).
 
-- **IN** reads the raw guitar input before the Input trim, noise gate and amp model — useful for setting
-  your interface/pickup level without downstream knobs hiding a clipped input.
-- **OUT** reads the final, limited signal sent to the output device.
 
-Both use a log-style 0…-60 dBFS scale with -20 dB at the midpoint (the 0…-20 dB decade occupies the
-upper half of the meter), plus a decaying peak-hold marker, a numeric RMS/peak readout and a brief clip
-indicator. They are read-only, idle while powered off, and do not affect the audio path or latency.
 
-# React + TypeScript + Vite
+## The faceplate
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+| Control | What it does |
+| --- | --- |
+| **Input** (0–10) | Drive into the model. |
+| **Gate** (0–10) | Noise threshold; higher values mute more between notes. |
+| **Bass / Middle / Treble** (0–10) | Output EQ. |
+| **Output** (0–10) | Master volume. |
+| **Reverb** (0–10) | Algorithmic room ambience: 0 = off, 10 = maximum wet mix. Starts off, is saved with each preset, and needs no IR file. Older presets recall with it off. |
+| **ON / standby** | Powers the audio path. In standby the meters idle and the status bar reads "Standby". |
+| **IN / OUT meters** | Read-only dBFS meters: IN taps the raw input *before* trim, gate and model (good for checking a clipped input); OUT shows the final, limited signal. Both show RMS/peak values, a decaying peak marker and a clip indicator. They don't affect the sound or latency. |
+| **Status bar** | Shows sample rate, latency and xruns while playing, plus the loaded NAM and cabinet names. |
 
-Currently, two official plugins are available:
+The three tool buttons at the top right open the tuner, the Model & IR Library and Settings.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Working with presets
 
-## React Compiler
+- **Click a slot** to audition its knobs, NAM model and IR immediately. An empty slot auditions
+  bypass (clears the model and IR but keeps knob positions) and becomes the target for **Save here**.
+- **Keys `1`–`4`** audition the matching slot in the bank currently on screen; an empty slot selects
+  bypass as the Save target.
+- **Audition is safe.** A banner shows what you're previewing. `Esc` or **Revert** restores the
+  exact sound you had before — including the previously loaded model and IR — and `Enter` or
+  **Keep** accepts the preview. Starting another audition doesn't lose your original sound.
+- **Knob changes are saved automatically** to the active preset after a short pause; there is no
+  Save button. A gold dot marks unsaved edits and disappears once the write completes. Use
+  **Save here** or **Save As…** in a slot's menu to write the current sound to a different slot.
+- **Right-click a slot** (or its `⋯` button) for Import preset…, Save here, Save As…, Edit…,
+  Export…, Rename… and Delete. **Edit…** opens a full-rig editor (name, all seven knobs and the
+  model/IR) with a picker for already-imported files and an option to import new ones. Opening
+  Edit… auditions the stored preset; changes play live, Cancel restores the previous sound, and
+  Save writes the rig back to the same slot.
+- Dropping a preset `.json` anywhere in the window imports it. Presets keep their model and cabinet
+  after a restart; presets saved without either recall as bypass.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Model & IR Library
 
-## Expanding the Oxlint configuration
+The book icon opens a full-window browser for stored `.nam` and `.wav` files. Search by filename or
+by the presets using it, filter by Models / IRs, and sort by name, kind, size, date or usage. Each
+row shows file size, when it was added and how many presets use it; the details panel lists those
+presets.
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- **Import…** stores a copy of a `.nam` or `.wav` file without changing the live sound. Files are
+  deduplicated by content hash, so importing the same file twice doesn't waste disk space.
+- **Load** changes the live model or IR immediately. **Preview** (double-click, or `Enter` on a
+  selected row) auditions it with the same Keep / Revert banner as preset auditions.
+- **Export…** saves the original bytes to a path you choose. **Rename** changes the display name,
+  updates every preset that referenced it, and reloads it if it is currently loaded. **Delete**
+  removes the file after confirmation if presets use it, clearing those references.
+- **Clean up…** removes files no preset uses. Files loaded in the rig are always kept, and the
+  confirmation lists what would be deleted.
+- `↑`/`↓` navigate rows, `Ctrl/Cmd+F` focuses search, and `Esc` or **← Back to amp** returns to the
+  faceplate (`Esc` first reverts an active preview).
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+Dropped `.nam` and `.wav` files are imported and loaded immediately from any view, and the Library
+refreshes to show them.
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+
+## Where your files live
+
+Everything is stored locally in NAMpli's application data directory (`com.nampli.app`):
+
+| Platform | Application data directory |
+| --- | --- |
+| Linux | `~/.local/share/com.nampli.app` (or `$XDG_DATA_HOME/com.nampli.app`) |
+| macOS | `~/Library/Application Support/com.nampli.app` |
+| Windows | `%APPDATA%\com.nampli.app` |
+
+- `presets/index.json` lists the 4×4 grid; each preset is a separate `.json` file in `presets/`.
+- `library/nam/` and `library/ir/` hold the imported model and cabinet files, each in a folder
+  named after its content hash.
+- To back up your rig, copy the whole application data directory. Audio device and buffer-size
+  settings are global, not stored in presets.
+
+## Troubleshooting / FAQ
+
+- **No sound / status says "Standby".** Turn the amp on with the **ON** switch, then load a model or
+  recall a preset — the app starts in bypass. Check that Output isn't at 0.
+- **No devices listed.** Open Settings and try a different **Audio Host** (for example JACK vs.
+  ALSA/PipeWire), then reselect input and output devices.
+- **Clicks, crackles or xruns** (shown in the status bar). Increase **Latency** in Settings (e.g.
+  512 or 1024 samples), and close other audio-hungry apps.
+- **Notes cut out or the amp is silent but the tuner works.** The tuner listens before the gate.
+  Lower the **Gate** knob, or raise your input level while watching the **IN** meter.
+- **A preset lost its model or cabinet.** Re-import the file (dropping it loads it immediately) or
+  check that the original is still in the Library; deleting a file clears references from presets.
+- **I tried a preset and want my sound back.** Press `Esc` or click **Revert** in the audition
+  banner before accepting it.
+
+## Credits & License
+
+Built with [Tauri](https://tauri.app/), React, Vite, cpal and the
+[Neural Amp Modeler](https://github.com/NeuralAmpModelerCore/NAM) DSP. No license has been declared
+in this repository yet.
