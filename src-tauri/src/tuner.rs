@@ -1,18 +1,26 @@
-//! Monophonic guitar pitch detection for the tuner display.
+//! Monophonic pitch detection for the tuner display.
 //!
 //! Uses the YIN algorithm: an autocorrelation-style difference function,
 //! cumulative-mean normalization, and parabolic interpolation of the first
-//! significant dip. It runs on the DSP worker thread once per analysis window
-//! (~43ms), which is fast enough for a tuner and cheap enough to never threaten
-//! the audio deadline. All buffers are pre-allocated.
+//! significant dip. It runs on the DSP worker thread once per analysis window,
+//! which is fast enough for a tuner and cheap enough to never threaten the
+//! audio deadline. All buffers are pre-allocated.
+//!
+//! The window is sized from the sample rate (see [`Tuner::prepare`]) so it
+//! always spans a few periods of the lowest supported note. A fixed sample
+//! count would cover fewer periods at higher rates and miss low bass notes.
 
-/// Analysis window. 4096 samples at 48kHz is ~85ms, long enough to see several
-/// periods of a low bass note (down to ~60Hz) while still tracking playing.
-const WINDOW: usize = 4096;
-/// Lowest fundamental we report (covers drop tunings down to ~G1).
-const MIN_HZ: f32 = 50.0;
+/// Lowest fundamental we report. The headroom below six-string bass low A
+/// (27.5 Hz) keeps notes at the bottom of the range from being clipped when the
+/// detected lag rounds past the exact frequency. Also covers five-string low B
+/// (30.9 Hz), four-string low E (41.2 Hz) and drop D (36.7 Hz).
+const MIN_HZ: f32 = 25.0;
 /// Highest fundamental we report (above a high-fret bend).
 const MAX_HZ: f32 = 1400.0;
+/// Analysis window length as a multiple of the lowest note's period. Three
+/// periods leave a two-period integration window at the longest lag, which is
+/// what YIN needs for a stable dip on inharmonic wound strings.
+const WINDOW_PERIODS: f32 = 3.0;
 /// YIN absolute threshold; lower means "more periodic". 0.2 is a bit more
 /// forgiving than the textbook 0.15, which helps with the inharmonicity of
 /// wound bass strings.
@@ -29,7 +37,8 @@ pub struct TunerReading {
 }
 
 pub struct Tuner {
-    /// Always the most recent `WINDOW` input samples.
+    /// Always the most recent `self.window.len()` input samples. The length is
+    /// derived from the sample rate in `prepare`, not a fixed constant.
     window: Vec<f32>,
     /// Raw difference function for lags `0..=max_lag`.
     diff: Vec<f32>,
@@ -40,14 +49,14 @@ pub struct Tuner {
     sample_rate: f32,
     min_lag: usize,
     max_lag: usize,
-    /// Length of the fixed integration window (`WINDOW - max_lag`).
+    /// Length of the fixed integration window (`window.len() - max_lag`).
     integration: usize,
 }
 
 impl Tuner {
     pub fn new(sample_rate: f32) -> Self {
         let mut tuner = Tuner {
-            window: vec![0.0; WINDOW],
+            window: Vec::new(),
             diff: vec![0.0; 2],
             norm: vec![0.0; 2],
             since_analysis: 0,
@@ -64,10 +73,14 @@ impl Tuner {
     pub fn prepare(&mut self, sample_rate: f32) {
         self.sample_rate = sample_rate.max(1.0);
         self.min_lag = (self.sample_rate / MAX_HZ).floor().max(2.0) as usize;
-        self.max_lag = (self.sample_rate / MIN_HZ).ceil() as usize;
-        // Keep enough samples for a full comparison at the longest lag.
-        self.max_lag = self.max_lag.min(WINDOW - 8);
-        self.integration = WINDOW - self.max_lag;
+        self.max_lag = ((self.sample_rate / MIN_HZ).ceil() as usize).max(self.min_lag + 2);
+        // The longest lag is one period of the lowest note. Give the analysis a
+        // few of those periods so the difference function has a clear dip even
+        // for inharmonic bass strings, at any device sample rate.
+        let window = (self.max_lag as f32 * WINDOW_PERIODS).ceil() as usize;
+        let window = window.max(self.max_lag + 8);
+        self.window.resize(window, 0.0);
+        self.integration = window - self.max_lag;
         self.diff = vec![0.0; self.max_lag + 2];
         self.norm = vec![0.0; self.max_lag + 2];
         self.window.fill(0.0);
@@ -81,17 +94,17 @@ impl Tuner {
             return None;
         }
 
-        if samples.len() >= WINDOW {
-            self.window
-                .copy_from_slice(&samples[samples.len() - WINDOW..]);
+        let len = self.window.len();
+        if samples.len() >= len {
+            self.window.copy_from_slice(&samples[samples.len() - len..]);
         } else {
             let shift = samples.len();
             self.window.copy_within(shift.., 0);
-            self.window[WINDOW - shift..].copy_from_slice(samples);
+            self.window[len - shift..].copy_from_slice(samples);
         }
 
         self.since_analysis += samples.len();
-        if self.since_analysis < WINDOW {
+        if self.since_analysis < len {
             return None;
         }
         self.since_analysis = 0;
@@ -102,12 +115,13 @@ impl Tuner {
     fn analyze(&mut self) -> TunerReading {
         // Remove DC so a drifting input (or a strong low-frequency rumble) does
         // not skew the difference function.
-        let mean: f32 = self.window.iter().sum::<f32>() / WINDOW as f32;
+        let len = self.window.len();
+        let mean: f32 = self.window.iter().sum::<f32>() / len as f32;
         let sum_sq: f32 = self.window.iter().map(|x| {
             let d = x - mean;
             d * d
         }).sum();
-        let rms = (sum_sq / WINDOW as f32).sqrt();
+        let rms = (sum_sq / len as f32).sqrt();
         let level_db = 20.0 * rms.max(1.0e-9).log10();
 
         if rms < SILENCE_RMS {
@@ -206,37 +220,80 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn detects_a_sine_wave() {
-        let rate = 48_000.0;
+    /// Feed one full analysis window and return the resulting reading.
+    fn reading_for(freq: f32, rate: f32) -> TunerReading {
         let mut tuner = Tuner::new(rate);
-        let samples = sine(110.0, rate, WINDOW);
-        let reading = tuner.push(&samples).expect("should analyze");
-        assert!(reading.hz > 0.0, "no pitch detected");
+        let samples = sine(freq, rate, tuner.window.len());
+        tuner.push(&samples).expect("should analyze")
+    }
+
+    fn assert_detects(freq: f32, rate: f32) {
+        let reading = reading_for(freq, rate);
         assert!(
-            (reading.hz - 110.0).abs() < 1.0,
-            "detected {}Hz, expected 110Hz",
-            reading.hz
+            (reading.hz - freq).abs() < 1.0,
+            "detected {}Hz at {}Hz rate, expected {}Hz",
+            reading.hz,
+            rate,
+            freq
         );
     }
 
     #[test]
-    fn detects_low_e() {
-        let rate = 48_000.0;
-        let mut tuner = Tuner::new(rate);
-        let samples = sine(82.41, rate, WINDOW);
-        let reading = tuner.push(&samples).expect("should analyze");
+    fn detects_a_sine_wave() {
+        assert_detects(110.0, 48_000.0);
+    }
+
+    #[test]
+    fn detects_guitar_low_e() {
+        assert_detects(82.41, 48_000.0);
+    }
+
+    #[test]
+    fn detects_bass_low_e() {
+        assert_detects(41.20, 48_000.0);
+    }
+
+    #[test]
+    fn detects_bass_drop_d() {
+        assert_detects(36.71, 48_000.0);
+    }
+
+    #[test]
+    fn detects_five_string_low_b() {
+        assert_detects(30.87, 48_000.0);
+    }
+
+    #[test]
+    fn detects_six_string_low_a() {
+        assert_detects(27.50, 48_000.0);
+    }
+
+    #[test]
+    fn detects_bass_notes_at_other_sample_rates() {
+        for rate in [44_100.0, 96_000.0] {
+            for freq in [27.50, 30.87, 36.71, 41.20] {
+                assert_detects(freq, rate);
+            }
+        }
+    }
+
+    #[test]
+    fn window_spans_the_same_time_at_any_sample_rate() {
+        let low = Tuner::new(44_100.0);
+        let high = Tuner::new(96_000.0);
+        assert!(high.window.len() > low.window.len());
+        let low_ms = low.window.len() as f32 / 44_100.0 * 1000.0;
+        let high_ms = high.window.len() as f32 / 96_000.0 * 1000.0;
         assert!(
-            (reading.hz - 82.41).abs() < 1.0,
-            "detected {}Hz, expected 82.41Hz",
-            reading.hz
+            (low_ms - high_ms).abs() < 0.5,
+            "window durations differ: {low_ms}ms vs {high_ms}ms"
         );
     }
 
     #[test]
     fn silence_reports_no_pitch() {
         let mut tuner = Tuner::new(48_000.0);
-        let samples = vec![0.0_f32; WINDOW];
+        let samples = vec![0.0_f32; tuner.window.len()];
         let reading = tuner.push(&samples).expect("should analyze");
         assert_eq!(reading.hz, 0.0);
     }

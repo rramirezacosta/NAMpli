@@ -55,7 +55,7 @@ export default function Tuner({ powered }: TunerProps) {
   return (
     <div
       className={`tuner ${powered ? 'active' : ''} ${inTune ? 'in-tune' : ''}`}
-      title="Chromatic tuner (detects the pitch of the guitar input)"
+      title="Chromatic tuner (detects the pitch of the guitar or bass input)"
     >
       <div className="tuner-header">
         <span className="tuner-label">Tuner</span>
